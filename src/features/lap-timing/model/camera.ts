@@ -38,6 +38,8 @@ function tuningFromQuery(): Partial<EngineOptions> {
   if (vibration !== null) overrides.vibrationThreshold = vibration;
   const delta = num("delta");
   if (delta !== null) overrides.pixelDeltaThreshold = delta;
+  const chromaDelta = num("chromaDelta");
+  if (chromaDelta !== null) overrides.chromaDeltaThreshold = chromaDelta;
   const minGap = num("minGap");
   if (minGap !== null) overrides.minGapMs = minGap;
   const maxBurst = num("maxBurst");

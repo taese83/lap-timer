@@ -20,6 +20,13 @@ export interface EngineOptions {
   vibrationThreshold: number;
   /** 픽셀 단위 luma 변화 임계(0~255) — 이 이상 달라진 픽셀만 "변함"으로 카운트. */
   pixelDeltaThreshold: number;
+  /**
+   * R9 색 차분 임계 — 대립채널 거리 |Δ(r−g)| + |Δ(g−b)| 가 이 이상이면 luma가 같아도
+   * "변함"으로 카운트한다(luma OR chroma). 배경과 밝기가 비슷한 색 차(하늘색 차 + 회색 트랙)
+   * 사각지대 회수. 대립채널은 전 채널 동일 이동(순수 노출 변화)에 불변이라 AE 출렁임에는
+   * 반응하지 않는다. rgb 미제공 프레임은 luma 경로만 사용(하위 호환).
+   */
+  chromaDeltaThreshold: number;
   /** 배경 EMA 학습률(비-가림 프레임에서만 적용). */
   bgLearnRate: number;
   /** 통과 이벤트 최소 간격(ms) — 이중 트리거 디바운스(brief minGap). */
@@ -55,6 +62,9 @@ export const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
   softOcclusionThreshold: 0.18,
   vibrationThreshold: 0.15,
   pixelDeltaThreshold: 28,
+  // R9: 두 항 합산 지표라 luma 임계보다 넉넉히 — 센서 노이즈(항당 ±수 단위)·경미한 AWB 이동은
+  // 밑돌고, 색이 실제로 다른 전경(하늘색 vs 회색 ≈ 200+)은 크게 상회한다. ?chromaDelta= 오버라이드.
+  chromaDeltaThreshold: 48,
   bgLearnRate: 0.05,
   minGapMs: 300,
   maxBurstMs: 2000,

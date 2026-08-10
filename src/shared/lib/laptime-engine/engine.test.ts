@@ -225,6 +225,47 @@ describe("laptime-engine", () => {
     expect(d).toBeLessThan(1.2); // 스무딩으로 겹침 발생 — border(1.5) 안쪽 = 같은 차 유지
   });
 
+  it("R9 색 차분: 배경과 luma가 같아도 색이 다르면 감지된다 (하늘색 차 + 동명도 회색 트랙)", () => {
+    const e = mk();
+    const uniform = (tMs: number, lumaV: number, r: number, g: number, b: number) => {
+      const luma = new Uint8Array(N).fill(lumaV);
+      const rgb = new Uint8Array(N * 3);
+      for (let i = 0; i < N; i++) {
+        rgb[i * 3] = r;
+        rgb[i * 3 + 1] = g;
+        rgb[i * 3 + 2] = b;
+      }
+      return { tMs, luma, rgb };
+    };
+    e.process(uniform(0, 91, 91, 91, 91)); // 회색 트랙 (luma 91)
+    // 하늘색 차 (24,97,242): luma ≈ 91 → luma 차분 0에 가까움 — 종전엔 완전 미감지
+    const ev = [...e.process(uniform(16, 91, 24, 97, 242)), ...e.process(uniform(32, 91, 91, 91, 91))];
+    expect(ev).toHaveLength(1);
+    expect(ev[0]!.peakChangeRatio).toBeCloseTo(1, 5);
+    expect(ev[0]!.signature).not.toBeNull(); // 시그니처도 chroma 전경에서 산출
+  });
+
+  it("R9 노출·AWB 내성: 전 채널 동일 이동과 경미한 색 이동은 감지되지 않는다", () => {
+    const e = mk();
+    const uniform = (tMs: number, r: number, g: number, b: number, lumaV: number) => {
+      const luma = new Uint8Array(N).fill(lumaV);
+      const rgb = new Uint8Array(N * 3);
+      for (let i = 0; i < N; i++) {
+        rgb[i * 3] = r;
+        rgb[i * 3 + 1] = g;
+        rgb[i * 3 + 2] = b;
+      }
+      return { tMs, luma, rgb };
+    };
+    e.process(uniform(0, 120, 100, 90, 103));
+    // 노출 +15 (전 채널 동일 — 대립채널 불변, luma +15 < 28) → 미감지
+    e.process(uniform(16, 135, 115, 105, 118));
+    expect(e.lastChangeRatio).toBe(0);
+    // AWB 소폭 이동 (r+10, b−8 → dOpp = 10 + |{-?}|... 합산 ≤ 28 < 48) → 미감지
+    e.process(uniform(32, 130, 100, 82, 105));
+    expect(e.lastChangeRatio).toBe(0);
+  });
+
   it("R6 soft 과도: 연속 2프레임 20%대(임계 미달)도 통과로 인정", () => {
     const e = mk();
     const ev: ReturnType<typeof e.process> = [];

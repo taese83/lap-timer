@@ -45,6 +45,11 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
   const options: EngineOptions = { ...DEFAULT_ENGINE_OPTIONS, ...partial };
   const n = options.width * options.height;
   let bg: Float32Array | null = null;
+  // R9 색 배경 모델 — 대립채널(r−g, g−b) EMA. 순수 노출 변화에 불변이라 luma보다 안정적.
+  let bgO1: Float32Array | null = null;
+  let bgO2: Float32Array | null = null;
+  /** 시드 프레임에 rgb가 있었는가 — 없으면 chroma 판정·갱신을 전부 생략(luma 전용 하위 호환) */
+  let chromaReady = false;
   let burst: Burst | null = null;
   let lastPassMs = -Infinity;
   let lastRatio = 0;
@@ -55,11 +60,40 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
 
   function reset(): void {
     bg = null;
+    bgO1 = null;
+    bgO2 = null;
+    chromaReady = false;
     burst = null;
     lastPassMs = -Infinity;
     lastRatio = 0;
     elevatedSinceMs = null;
     softSuppressed = false;
+  }
+
+  /** 배경 시드/재시드 — luma + 대립채널을 현재 프레임으로 통째로 교체 (R2 자가복구 공용) */
+  function seedBackground(frame: EngineFrame): void {
+    bg = Float32Array.from(frame.luma);
+    const rgb = frame.rgb;
+    chromaReady = rgb !== undefined;
+    bgO1 = new Float32Array(n);
+    bgO2 = new Float32Array(n);
+    if (rgb) {
+      for (let i = 0; i < n; i++) {
+        bgO1[i] = rgb[i * 3]! - rgb[i * 3 + 1]!;
+        bgO2[i] = rgb[i * 3 + 1]! - rgb[i * 3 + 2]!;
+      }
+    }
+  }
+
+  /** R9 전경 판정 — luma 차분 OR 대립채널(색) 차분. 두 소비처(변화율·시그니처)가 공유. */
+  function isForeground(frame: EngineFrame, i: number): boolean {
+    if (Math.abs(frame.luma[i]! - bg![i]!) > options.pixelDeltaThreshold) return true;
+    const rgb = frame.rgb;
+    if (!chromaReady || !rgb) return false;
+    const dOpp =
+      Math.abs(rgb[i * 3]! - rgb[i * 3 + 1]! - bgO1![i]!) +
+      Math.abs(rgb[i * 3 + 1]! - rgb[i * 3 + 2]! - bgO2![i]!);
+    return dOpp > options.chromaDeltaThreshold;
   }
 
   function openBurst(tMs: number, hardSeen: boolean): Burst {
@@ -76,32 +110,32 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
     };
   }
 
-  function extendBurst(b: Burst, frame: EngineFrame, background: Float32Array, tMs: number, ratio: number): void {
+  function extendBurst(b: Burst, frame: EngineFrame, tMs: number, ratio: number): void {
     b.lastMs = tMs;
     b.sumT += tMs * ratio;
     b.sumW += ratio;
     b.peak = Math.max(b.peak, ratio);
-    accumulateSignature(frame, background, b);
+    accumulateSignature(frame, b);
   }
 
-  function changeRatio(luma: Uint8Array, background: Float32Array): number {
+  function changeRatio(frame: EngineFrame): number {
     let changed = 0;
     for (let i = 0; i < n; i++) {
-      if (Math.abs(luma[i]! - background[i]!) > options.pixelDeltaThreshold) changed++;
+      if (isForeground(frame, i)) changed++;
     }
     return changed / n;
   }
 
-  function accumulateSignature(frame: EngineFrame, background: Float32Array, into: Burst): void {
+  function accumulateSignature(frame: EngineFrame, into: Burst): void {
     const rgb = frame.rgb;
     if (!rgb) return;
     const luma = frame.luma;
     // 무채색 bin 경계 — 전경 필터가 |Δ|>T를 보장하므로 ±2T가 강/약 대비를 가른다
     const strongDelta = 2 * options.pixelDeltaThreshold;
     for (let i = 0; i < n; i++) {
-      const delta = luma[i]! - background[i]!;
-      // 전경(변한) 픽셀만 색 시그니처에 반영 — 배경 색 오염 배제
-      if (Math.abs(delta) <= options.pixelDeltaThreshold) continue;
+      const delta = luma[i]! - bg![i]!;
+      // 전경(변한) 픽셀만 색 시그니처에 반영 — 배경 색 오염 배제 (R9: luma OR chroma 판정 공유)
+      if (!isForeground(frame, i)) continue;
       const r = rgb[i * 3]! / 255;
       const g = rgb[i * 3 + 1]! / 255;
       const b = rgb[i * 3 + 2]! / 255;
@@ -152,11 +186,11 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
     const { luma, tMs } = frame;
     if (luma.length !== n) throw new Error(`frame luma length ${luma.length} != ${n}`);
     if (bg === null) {
-      bg = Float32Array.from(luma); // 첫 프레임 = 배경 시드
+      seedBackground(frame); // 첫 프레임 = 배경 시드 (luma + 대립채널, R9)
       lastRatio = 0;
       return [];
     }
-    const ratio = changeRatio(luma, bg);
+    const ratio = changeRatio(frame);
     lastRatio = ratio;
     const events: PassEvent[] = [];
 
@@ -166,13 +200,13 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
       // 기여가 통과 중심에 포함된다.
       if (burst === null) burst = openBurst(tMs, true);
       else burst.hardSeen = true;
-      extendBurst(burst, frame, bg, tMs, ratio);
+      extendBurst(burst, frame, tMs, ratio);
       // R2 자가 복구(실기기: 정지 후 차·손이 레인 위에 머물면 burst가 영구 미종결 → 이후 감지
       // 전멸): 통과라기엔 너무 긴 가림은 장면 전환(폰 이동·주차된 차)이다 — burst 폐기 +
       // 배경을 현재 프레임으로 재시드해 잠금을 푼다. 통과 이벤트는 내지 않는다(차 통과 아님).
       if (tMs - burst.startMs > options.maxBurstMs) {
         burst = null;
-        bg = Float32Array.from(luma);
+        seedBackground(frame);
         lastRatio = 0;
         elevatedSinceMs = null;
       }
@@ -183,13 +217,13 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
     const soft = ratio >= options.softOcclusionThreshold;
     if (soft && burst !== null && !burst.hardSeen && burst.softFrames < SOFT_MAX_FRAMES) {
       burst.softFrames += 1;
-      extendBurst(burst, frame, bg, tMs, ratio);
+      extendBurst(burst, frame, tMs, ratio);
       return events;
     }
     if (soft && burst === null) {
       if (!softSuppressed) {
         burst = openBurst(tMs, false);
-        extendBurst(burst, frame, bg, tMs, ratio);
+        extendBurst(burst, frame, tMs, ratio);
       }
       // 억제 중이면 아래 elevated 자가복구 로직으로 흘려보낸다 (지속 교란 → 2s 후 배경 재시드)
       if (burst !== null) return events;
@@ -218,7 +252,14 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
     // 진동(vibrationThreshold~occlusionThreshold 사이)은 통과도 아니고, 배경 학습 오염도 피한다.
     if (ratio < options.vibrationThreshold) {
       const a = options.bgLearnRate;
-      for (let i = 0; i < n; i++) bg[i] = bg[i]! + a * (luma[i]! - bg[i]!);
+      const rgb = frame.rgb;
+      for (let i = 0; i < n; i++) {
+        bg![i] = bg![i]! + a * (luma[i]! - bg![i]!);
+        if (chromaReady && rgb) {
+          bgO1![i] = bgO1![i]! + a * (rgb[i * 3]! - rgb[i * 3 + 1]! - bgO1![i]!);
+          bgO2![i] = bgO2![i]! + a * (rgb[i * 3 + 1]! - rgb[i * 3 + 2]! - bgO2![i]!);
+        }
+      }
       elevatedSinceMs = null;
       softSuppressed = false; // R6: 조용해지면 soft 감지 재개
     } else {
@@ -227,7 +268,7 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
       // 이어지면 순간 사건이 아니라 장면·노출이 바뀐 것이다 — 배경을 현재 프레임으로 재시드.
       if (elevatedSinceMs === null) elevatedSinceMs = tMs;
       else if (tMs - elevatedSinceMs > options.maxBurstMs) {
-        bg = Float32Array.from(luma);
+        seedBackground(frame);
         lastRatio = 0;
         elevatedSinceMs = null;
       }

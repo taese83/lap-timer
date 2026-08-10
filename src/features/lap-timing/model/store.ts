@@ -58,12 +58,12 @@ interface LapState {
   lastEvent: string | null;
   _learnTimer: ReturnType<typeof setTimeout> | null;
   /**
-   * R10(사용자 확정 흐름) — 보류된 의심 통과. 의심(MATCH<d≤BORDER)이 오면 **시각만 기록하고
-   * 타이머는 계속** 진행한다. 이후 확정 매치(d≤MATCH)가 오면 그것으로 정지하며 의심 기록은
-   * 삭제, 확정 없이 버튼으로 정지하면 이 의심 시각을 랩타임으로 기재하고 의심 표시한다.
-   * 최초 의심을 유지(뒤따르는 의심은 교체하지 않음 — 먼저 통과한 쪽이 결승 후보).
+   * R10(사용자 확정 흐름) — 보류된 의심 통과 **전부(시간순)**. 의심(MATCH<d≤BORDER)이 오면
+   * 시각을 기록하고 타이머는 계속 진행한다. 이후 확정 매치(d≤MATCH)가 오면 그것으로 정지하며
+   * 의심 기록은 삭제, 확정 없이 버튼으로 정지하면 최초 의심 시각을 랩타임으로 기재(의심 표시)
+   * 하고 나머지 의심도 후보로 랩에 실어 시간순 표시한다(R10-c).
    */
-  _pendingSuspect: { tMs: number; d: number } | null;
+  _pendingSuspects: { tMs: number; d: number }[];
 
   hydrate: () => Promise<void>;
   startManual: () => void;
@@ -89,10 +89,10 @@ function persist(s: Pick<LapState, "startedAt" | "laps" | "otherPass">): void {
 export const useLapStore = create<LapState>((set, get) => {
   /** R10: 보류 의심 해제 — 정지(확정/버튼)·세션 이탈 모든 경로에서 호출 */
   function clearSuspect(): void {
-    if (get()._pendingSuspect !== null) set({ _pendingSuspect: null });
+    if (get()._pendingSuspects.length > 0) set({ _pendingSuspects: [] });
   }
 
-  function recordLap(stopEngineMs: number | null, suspect: boolean): void {
+  function recordLap(stopEngineMs: number | null, suspect: boolean, candidatesMs?: number[]): void {
     clearSuspect();
     const { lapStart, laps, startedAt, otherPass } = get();
     if (!lapStart) return;
@@ -104,7 +104,10 @@ export const useLapStore = create<LapState>((set, get) => {
       set({ lastEvent: `통과 ${Math.round(dur)}ms — 랩 하한(${MIN_LAP_MS}ms) 미만 무시` });
       return; // 디바운스
     }
-    const nextLaps = [...laps, { n: laps.length + 1, durationMs: dur, suspect }];
+    // R10-c: 의심 후보가 2개 이상일 때만 랩에 실어 시간순 표시 (1개면 durationMs가 곧 그 값)
+    const lap: Lap = { n: laps.length + 1, durationMs: dur, suspect };
+    if (candidatesMs !== undefined && candidatesMs.length >= 2) lap.candidatesMs = candidatesMs;
+    const nextLaps = [...laps, lap];
     set({
       laps: nextLaps,
       phase: "idle",
@@ -129,7 +132,7 @@ export const useLapStore = create<LapState>((set, get) => {
     startedAt: Date.now(),
     lastEvent: null,
     _learnTimer: null,
-    _pendingSuspect: null,
+    _pendingSuspects: [],
 
     hydrate: async () => {
       const cur = await loadCurrent();
@@ -168,13 +171,18 @@ export const useLapStore = create<LapState>((set, get) => {
     },
 
     stopByButton: () => {
-      const { phase, _pendingSuspect } = get();
+      const { phase, _pendingSuspects, lapStart } = get();
       if (phase === "running") {
-        // R10: 보류된 의심이 있으면 그 통과 시각으로 의심 랩 기재 — "확정 없이 정지하면
-        // 의심 판단 정보를 그대로 랩타임에 기재"(사용자 확정). 의심이 랩 하한 미만이라
-        // 기록되지 못하면 버튼 정지 본연의 동작(현재 시각)으로 마감한다.
-        if (_pendingSuspect !== null) {
-          recordLap(_pendingSuspect.tMs, true);
+        // R10: 보류된 의심이 있으면 최초 의심 시각으로 의심 랩 기재 + 전 의심을 후보로 표시
+        // (R10-c, 시간순). 랩 하한 미만 의심은 후보에서 제외, 유효 후보가 없으면 버튼 정지
+        // 본연의 동작(현재 시각)으로 마감한다.
+        const startEngineMs = lapStart?.engineMs ?? null;
+        const valid =
+          startEngineMs !== null
+            ? _pendingSuspects.filter((p) => p.tMs - startEngineMs >= MIN_LAP_MS)
+            : [];
+        if (valid.length > 0) {
+          recordLap(valid[0]!.tMs, true, valid.map((p) => p.tMs - startEngineMs!));
           if (get().phase === "running") recordLap(null, false);
         } else {
           recordLap(null, false);
@@ -216,16 +224,13 @@ export const useLapStore = create<LapState>((set, get) => {
           recordLap(event.tMs, false); // 확정 매치 — 즉시 정지, 보류 의심은 recordLap이 삭제
           return;
         }
-        // R10(사용자 확정 흐름): 의심은 시각만 보류하고 타이머는 계속 — _pendingSuspect 주석 참조
-        const pending = get()._pendingSuspect;
-        if (pending === null) {
-          set({
-            _pendingSuspect: { tMs: event.tMs, d },
-            lastEvent: `의심 통과 d=${d.toFixed(2)} 기록 — 계측 계속 (확정 시 대체, 정지 시 의심 랩)`,
-          });
-        } else {
-          set({ lastEvent: `의심 통과 d=${d.toFixed(2)} — 최초 의심(${(pending.tMs / 1000).toFixed(2)}s) 유지` });
-        }
+        // R10(사용자 확정 흐름): 의심은 시각만 보류하고 타이머는 계속 — _pendingSuspects 주석 참조.
+        // R10-c: 여러 의심은 전부 시간순으로 쌓는다 (정지 시 후보로 함께 표시).
+        const pendings = [...get()._pendingSuspects, { tMs: event.tMs, d }];
+        set({
+          _pendingSuspects: pendings,
+          lastEvent: `의심 통과 d=${d.toFixed(2)} 기록 (${pendings.length}건째) — 계측 계속`,
+        });
       } else {
         recordLap(event.tMs, false); // 수동 모드: 아무 통과나 결승선
       }

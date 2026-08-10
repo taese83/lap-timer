@@ -8,6 +8,12 @@ export interface Lap {
   durationMs: number;
   /** 경계 매칭(색 애매)·병합 의심 랩 */
   suspect: boolean;
+  /**
+   * R10-c: 의심 통과가 여러 번이었을 때의 후보 랩타임 전부(시간순, durationMs=첫 항목).
+   * 확정 없이 정지한 세션에서 어느 통과가 내 차였는지 사용자가 판단할 근거. additive optional —
+   * 구 레코드·확정 랩은 부재.
+   */
+  candidatesMs?: number[];
 }
 
 export interface SessionRecord {

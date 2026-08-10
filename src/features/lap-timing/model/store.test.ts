@@ -81,17 +81,42 @@ describe("lap store 상태머신", () => {
     expect(Math.round(S().laps[0]!.durationMs)).toBe(4000); // 확정 통과 시각 기준
   });
 
-  it("R10: 뒤따르는 의심은 최초 의심을 대체하지 않는다", async () => {
+  it("R10-c: 여러 의심은 전부 시간순 후보로 랩에 실린다 (채택값 = 최초 의심)", async () => {
     S().startDetect();
     S().cameraReady();
     await wait(1300);
     S().handlePass(pass(1000, green));
     const border = Array.from({ length: 12 }, (_, i) => (i === 4 ? 0.6 : i === 5 ? 0.4 : 0));
-    S().handlePass(pass(3000, border)); // 최초 의심
-    S().handlePass(pass(4500, border)); // 후속 의심 — 무시(최초 유지)
+    S().handlePass(pass(3000, border)); // 의심 1
+    S().handlePass(pass(4500, border)); // 의심 2
+    S().handlePass(pass(6200, border)); // 의심 3
     S().stopByButton();
     expect(S().laps).toHaveLength(1);
-    expect(Math.round(S().laps[0]!.durationMs)).toBe(2000); // 최초 의심(3000) 기준
+    const lap = S().laps[0]!;
+    expect(lap.suspect).toBe(true);
+    expect(Math.round(lap.durationMs)).toBe(2000); // 채택값 = 최초 의심(3000) 기준
+    expect(lap.candidatesMs?.map((ms) => Math.round(ms))).toEqual([2000, 3500, 5200]); // 시간순 전부
+  });
+
+  it("R10-c: 의심이 1건이면 후보 목록 없이 기록, 확정 정지 랩에도 후보 없음", async () => {
+    S().startDetect();
+    S().cameraReady();
+    await wait(1300);
+    S().handlePass(pass(1000, green));
+    const border = Array.from({ length: 12 }, (_, i) => (i === 4 ? 0.6 : i === 5 ? 0.4 : 0));
+    S().handlePass(pass(3000, border)); // 의심 1건
+    S().stopByButton();
+    expect(S().laps[0]!.candidatesMs).toBeUndefined();
+    // 두 번째 세션: 의심 후 확정 — 후보 없음
+    S().startDetect();
+    S().cameraReady();
+    await wait(1300);
+    S().handlePass(pass(10000, green));
+    S().handlePass(pass(12000, border));
+    S().handlePass(pass(14000, green)); // 확정 — 의심 폐기
+    expect(S().laps).toHaveLength(2);
+    expect(S().laps[1]!.suspect).toBe(false);
+    expect(S().laps[1]!.candidatesMs).toBeUndefined();
   });
 
   it("R3: 새 감지 세션은 타깃을 재등록한다 — 이전 세션 시그니처가 시작을 막지 않음", async () => {

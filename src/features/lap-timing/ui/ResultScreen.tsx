@@ -46,12 +46,20 @@ export function ResultScreen() {
       <div className="laplist">
         {s.laps.length ? (
           s.laps.map((l) => (
-            <div key={l.n} className={`laprow${l.durationMs === best ? " best" : ""}`}>
-              <span>
-                랩 {l.n}
-                {l.suspect && <span className="badge">의심</span>}
-              </span>
-              <span className="tnum">{fmt(l.durationMs)}</span>
+            <div key={l.n}>
+              <div className={`laprow${l.durationMs === best ? " best" : ""}`}>
+                <span>
+                  랩 {l.n}
+                  {l.suspect && <span className="badge">의심</span>}
+                </span>
+                <span className="tnum">{fmt(l.durationMs)}</span>
+              </div>
+              {l.candidatesMs && l.candidatesMs.length > 1 && (
+                // R10-c: 의심 통과가 여러 번이었던 랩 — 전 후보를 시간순 표기(첫 항목 = 채택값)
+                <div className="caption" style={{ padding: "0 var(--s3) var(--s2)" }}>
+                  의심 후보(시간순): {l.candidatesMs.map((ms) => fmt(ms)).join(" · ")}
+                </div>
+              )}
             </div>
           ))
         ) : (

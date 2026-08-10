@@ -5,6 +5,8 @@ import UIKit
 
 class AppViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
+        print("⚡️ AppViewController.capacitorDidLoad — HighFpsCamera 등록 시도 (bridge=\(bridge == nil ? "nil" : "ok"))")
         bridge?.registerPluginInstance(HighFpsCameraPlugin())
+        print("⚡️ HighFpsCamera 등록 호출 완료")
     }
 }

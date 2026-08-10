@@ -206,3 +206,13 @@ appId dev.taese83.laptime, webDir dist. ios/App = Xcode 프로젝트(커밋), di
   AppViewController(capacitorDidLoad → registerPluginInstance).
 - 검증: 웹 게이트(typecheck·27/27·build) + xcodebuild 시뮬레이터 BUILD SUCCEEDED.
   실기기 확인 항목: 캡션 fps=240/120 표시, 잠금 후 화면 밝기 고정, 통과 인식·타이밍.
+
+### R-hybrid-2 fix (2026-08-11) — "plugin is not implemented" 원인과 해결
+
+시뮬레이터 재현·계층 추적으로 확정: Capacitor 8 스캐폴드는 **SceneDelegate가 코드로
+CAPBridgeViewController()를 생성** — 스토리보드의 커스텀 클래스 지정은 무효 경로였고
+capacitorDidLoad(플러그인 등록)가 불리지 않았다. SceneDelegate에서 AppViewController()를
+직접 생성하도록 수정. 시뮬레이터 실증: 등록 로그 → 권한 팝업(우리 문구) → CamError.noDevice
+(시뮬레이터 무카메라 정상 실패) — JS→네이티브 왕복 완성. 참고: Xcode 증분 빌드가 새 파일을
+빼먹는 사례 확인 — 네이티브 파일 추가 후엔 Clean Build Folder 권장. packageClassList 주입은
+cap sync가 덮어써 불가(기록).

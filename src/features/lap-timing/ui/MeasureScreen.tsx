@@ -94,6 +94,10 @@ export function MeasureScreen() {
 
   return (
     <>
+      {/* R7: 카메라 = 전체 배경 — 감지 세션 중에만 보임(스크림이 가독성 확보). 캡처 ROI는
+          비디오 원본에서 그리므로 표시 크기와 무관(엔진 영향 없음). */}
+      <video ref={videoRef} className={`cam-bg${detectSession && fps !== null ? " on" : ""}`} playsInline muted />
+      <div className="cam-scrim" />
       <header className="bar">
         <h1>랩타임</h1>
         {s.laps.length > 0 && (
@@ -102,29 +106,26 @@ export function MeasureScreen() {
           </button>
         )}
       </header>
-      <div className="preview-strip">
-        <video ref={videoRef} className="preview-video" playsInline muted />
-        <span className="lens">
-          {!detectSession ? (
-            <>◉ 카메라 — 밀어서 시작하면 켜짐</>
-          ) : camError !== null ? (
-            <span style={{ color: "var(--warning, #f0b429)" }}>⚠ 카메라 실패 · {camError}</span>
-          ) : fps === null ? (
-            <>◉ 카메라 켜는 중…</>
-          ) : (
-            <>
-              ◉
-              {/* 30km/h 인식 보장은 60fps 필요(조사 R1) — 50 미만이면 경고색 */}
-              <span style={fps < 50 ? { color: "var(--warning, #f0b429)" } : undefined}> {fps}fps</span>
-              {stats !== null && (
-                // R2 진단 미터: 피크 변화율(임계 도달 시 라임) + 누적 프레임(0 고착 = 파이프 사망)
-                <span style={{ color: stats.peak >= stats.threshold ? "var(--lime, #a3e635)" : undefined }}>
-                  {" "}· 피크 {Math.round(stats.peak * 100)}%/{Math.round(stats.threshold * 100)}% · f{stats.frames}
-                </span>
-              )}
-            </>
-          )}
-        </span>
+      <div className="lens-line">
+        {!detectSession ? (
+          <>◉ 카메라 — 밀어서 시작하면 켜짐</>
+        ) : camError !== null ? (
+          <span style={{ color: "var(--warning, #f0b429)" }}>⚠ 카메라 실패 · {camError}</span>
+        ) : fps === null ? (
+          <>◉ 카메라 켜는 중…</>
+        ) : (
+          <>
+            ◉
+            {/* 30km/h 인식 보장은 60fps 필요(조사 R1) — 50 미만이면 경고색 */}
+            <span style={fps < 50 ? { color: "var(--warning, #f0b429)" } : undefined}> {fps}fps</span>
+            {stats !== null && (
+              // R2 진단 미터: 피크 변화율(임계 도달 시 라임) + 누적 프레임(0 고착 = 파이프 사망)
+              <span style={{ color: stats.peak >= stats.threshold ? "var(--lime, #a3e635)" : undefined }}>
+                {" "}· 피크 {Math.round(stats.peak * 100)}%/{Math.round(stats.threshold * 100)}% · f{stats.frames}
+              </span>
+            )}
+          </>
+        )}
       </div>
       <div className={`banner ${banner.v}`}>
         <span className="eyebrow">{banner.e}</span>

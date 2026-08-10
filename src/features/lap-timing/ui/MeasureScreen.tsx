@@ -1,7 +1,9 @@
 // 측정 화면(첫 화면). 카메라 시작 → 통과 이벤트를 store로. 라이브 타이머 tick. 하단 시작/정지.
 import { useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import { useLapStore } from "../model/store";
 import { startCamera, type CameraHandle } from "../model/camera";
+import { startNativeCamera } from "../model/camera-native";
 import { SlideToStart } from "./SlideToStart";
 import { fmt, signatureColor } from "./format";
 import type { LapPhase } from "@/entities/session/model/types";
@@ -34,12 +36,15 @@ export function MeasureScreen() {
   // 권한 노출도 없다. 수동(탭) 계측은 카메라 없이 버튼 정지 전용.
   const detectSession = s.startMode === "detect" && s.phase !== "idle";
   const [camError, setCamError] = useState<string | null>(null);
+  // R-hybrid-2: 네이티브 앱에서는 HighFpsCamera 플러그인(240fps·노출/AWB 잠금) — 웹은 getUserMedia
+  const isNative = Capacitor.isNativePlatform();
   useEffect(() => {
     if (!detectSession) return;
     const v = videoRef.current;
     if (!v) return;
     let cancelled = false;
-    startCamera(
+    const starter = isNative ? startNativeCamera : startCamera;
+    starter(
       v,
       (e) => useLapStore.getState().handlePass(e),
       (st) => setStats(st),
@@ -73,6 +78,15 @@ export function MeasureScreen() {
     if (s.phase === "learning") handleRef.current?.resetEngine();
   }, [s.phase]);
 
+  // R-hybrid-2: 네이티브 카메라 세션 중 배경 투명화 — WebView 아래 네이티브 프리뷰 레이어가
+  // 비쳐 R7 "카메라 전체 배경" UX 유지 (스크림은 DOM이 그대로 담당)
+  useEffect(() => {
+    if (!isNative) return;
+    const on = detectSession && fps !== null;
+    document.documentElement.classList.toggle("native-cam", on);
+    return () => document.documentElement.classList.remove("native-cam");
+  }, [isNative, detectSession, fps]);
+
   useEffect(() => {
     if (s.phase !== "running") return;
     let id = 0;
@@ -96,7 +110,8 @@ export function MeasureScreen() {
     <>
       {/* R7: 카메라 = 전체 배경 — 감지 세션 중에만 보임(스크림이 가독성 확보). 캡처 ROI는
           비디오 원본에서 그리므로 표시 크기와 무관(엔진 영향 없음). */}
-      <video ref={videoRef} className={`cam-bg${detectSession && fps !== null ? " on" : ""}`} playsInline muted />
+      {/* 네이티브 모드에선 video 미사용(프리뷰 = 네이티브 레이어) — on 클래스도 웹 전용 */}
+      <video ref={videoRef} className={`cam-bg${!isNative && detectSession && fps !== null ? " on" : ""}`} playsInline muted />
       <div className="cam-scrim" />
       <header className="bar">
         <h1>랩타임</h1>

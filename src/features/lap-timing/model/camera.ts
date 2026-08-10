@@ -3,8 +3,8 @@
 // getUserMedia는 secure context(HTTPS/localhost) + 권한 필요 — 실패는 호출자가 처리.
 import type { EngineOptions, EngineRequest, EngineResponse, EngineStats, PassEvent } from "@/shared/lib/laptime-engine/protocol";
 
-const ROI_W = 64;
-const ROI_H = 48;
+export const ROI_W = 64;
+export const ROI_H = 48;
 
 export interface CameraHandle {
   stop: () => void;
@@ -19,7 +19,7 @@ export interface CameraHandle {
  * 예: ?occlusion=0.4&vibration=0.15&delta=40&minGap=500&maxBurst=3000
  * 제품 기본 동작은 쿼리 없는 URL에서 불변. 진단 미터가 threshold를 함께 표시한다.
  */
-function tuningFromQuery(): Partial<EngineOptions> {
+export function tuningFromQuery(): Partial<EngineOptions> {
   const overrides: Partial<EngineOptions> = {};
   const search = globalThis.location?.search;
   if (typeof search !== "string" || search === "") return overrides;

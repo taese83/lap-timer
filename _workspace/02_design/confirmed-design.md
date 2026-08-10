@@ -194,3 +194,15 @@ appId dev.taese83.laptime, webDir dist. ios/App = Xcode 프로젝트(커밋), di
 패딩(.bar/.bottom-cta — 웹은 env=0이라 무변화, 실측 12/16px 확인). 웹 배포(Vercel) 공존.
 다음: ② HighFpsCamera 플러그인(240fps+노출/AWB 잠금+네이티브 다운스케일).
 빌드·서명은 Xcode.app 필요(이 맥 미설치 — 사용자 설치 후 진행).
+
+## R-hybrid-2 (2026-08-11) — HighFpsCamera 네이티브 플러그인
+
+- **Swift 플러그인**(ios/App/App/HighFpsCameraPlugin.swift): 후면 카메라 최고 fps 포맷(목표 240,
+  미지원 시 자동 하향) + 시작 1.4s 후 노출/화이트밸런스 잠금(웹 R2·R8 보정 대상의 원천 제거)
+  + 네이티브 64×48 다운스케일(luma 공식 웹과 동일) + 하드웨어 타임스탬프 + 초당 ~60 메시지
+  배치 전송 + WebView 투명화·네이티브 프리뷰 레이어(R7 전체 배경 UX 유지).
+- **JS 어댑터**(camera-native.ts): CameraHandle 계약 동일 — Worker 엔진·상태머신·임계 무수정.
+  MeasureScreen이 Capacitor.isNativePlatform()으로 분기(웹 경로 불변). 등록은
+  AppViewController(capacitorDidLoad → registerPluginInstance).
+- 검증: 웹 게이트(typecheck·27/27·build) + xcodebuild 시뮬레이터 BUILD SUCCEEDED.
+  실기기 확인 항목: 캡션 fps=240/120 표시, 잠금 후 화면 밝기 고정, 통과 인식·타이밍.

@@ -20,6 +20,8 @@ header.bar h1 { font-size: var(--font-h3); }
 .cam-bg.on { opacity: 1; }
 .cam-scrim { position: absolute; inset: 0; z-index: 0; pointer-events: none; background: linear-gradient(180deg, rgba(0, 0, 0, 0.72) 0%, rgba(0, 0, 0, 0.45) 35%, rgba(0, 0, 0, 0.45) 65%, rgba(0, 0, 0, 0.78) 100%); }
 .phone > *:not(.cam-bg):not(.cam-scrim) { position: relative; z-index: 1; }
+/* R-hybrid-2: 네이티브 카메라 세션 — WebView 아래 프리뷰 레이어가 비치도록 배경 전면 투명화 */
+html.native-cam, html.native-cam body, html.native-cam .phone { background: transparent !important; }
 .lens-line { padding: var(--s1) var(--s4); color: var(--color-text-secondary); font-size: var(--font-caption); }
 
 .banner { margin: var(--s3) var(--s4); padding: var(--s3) var(--s4); border-radius: var(--r-md); background: var(--color-bg-elevated); display: flex; flex-direction: column; gap: 2px; }

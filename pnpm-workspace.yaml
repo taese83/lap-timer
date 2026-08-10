@@ -1,0 +1,7 @@
+# 독립 워크스페이스 루트 선언 — 상위(web-harness) 워크스페이스로 walk-up 방지.
+# esbuild postinstall 허용 (pnpm 기본 차단 → Vercel install exit 1 방지).
+# allowBuilds = pnpm 11 형식, onlyBuiltDependencies = 구형 호환 병기.
+allowBuilds:
+  esbuild: true
+onlyBuiltDependencies:
+  - esbuild

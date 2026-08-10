@@ -1,4 +1,5 @@
-// 카메라 캡처 → ROI 다운스케일 → Worker 엔진. 타임스탬프는 rVFC mediaTime(정본, 미지원 시 rAF).
+// 카메라 캡처 → ROI 다운스케일 → Worker 엔진. 타임스탬프는 rVFC/rAF 콜백 시각(now) — R5:
+// getUserMedia 스트림의 mediaTime은 iOS에서 벽시계처럼 전진하지 않아 정본으로 쓰지 않는다.
 // getUserMedia는 secure context(HTTPS/localhost) + 권한 필요 — 실패는 호출자가 처리.
 import type { EngineOptions, EngineRequest, EngineResponse, EngineStats, PassEvent } from "@/shared/lib/laptime-engine/protocol";
 
@@ -79,7 +80,7 @@ export async function startCamera(
   const n = ROI_W * ROI_H;
   let stopped = false;
 
-  const onFrame = (now: number, meta?: { mediaTime: number }) => {
+  const onFrame = (now: number) => {
     if (stopped) return;
     ctx.drawImage(video, 0, 0, ROI_W, ROI_H);
     const img = ctx.getImageData(0, 0, ROI_W, ROI_H).data;
@@ -94,7 +95,11 @@ export async function startCamera(
       rgb[i * 3 + 1] = g;
       rgb[i * 3 + 2] = b;
     }
-    const tMs = meta ? meta.mediaTime * 1000 : now;
+    // R5(실기기 iOS 확정): getUserMedia 스트림에서 rVFC meta.mediaTime이 벽시계처럼 전진하지
+    // 않는다(f1 고정 실측 — 프레임은 흐르는데 스탯·minGap·maxBurst의 시간 게이트가 전부 동결).
+    // 첫 통과만 성공(-∞ 기준)하고 이후 통과가 영구 디바운스되던 "정지 안 됨"의 근본 원인.
+    // 콜백 시각 now(DOMHighResTimeStamp, vsync 정렬 — 60fps에서 ±8ms)를 정본으로 쓴다.
+    const tMs = now;
     worker.postMessage({ type: "frame", frame: { tMs, luma, rgb } } satisfies EngineRequest, [luma.buffer, rgb.buffer]);
     schedule();
   };

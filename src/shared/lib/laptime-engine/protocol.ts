@@ -66,7 +66,8 @@ export interface EngineStats {
 }
 
 export interface EngineFrame {
-  /** 프레임 타임스탬프 — 실제 앱에선 rVFC mediaTime(정본). */
+  /** 프레임 타임스탬프 — 실제 앱에선 rVFC/rAF 콜백 시각(now). mediaTime은 iOS getUserMedia에서
+   *  전진하지 않아 사용 금지(R5 실기기 확정 — 동결 시 minGap이 모든 후속 통과를 영구 억제). */
   tMs: number;
   /** ROI 그레이스케일 luma, 길이 = width*height. */
   luma: Uint8Array;

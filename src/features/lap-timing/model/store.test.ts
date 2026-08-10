@@ -22,6 +22,9 @@ describe("lap store 상태머신", () => {
     expect(S().phase).toBe("idle");
     expect(S().laps).toHaveLength(1);
     expect(S().laps[0]!.durationMs).toBeGreaterThanOrEqual(800);
+    // R10-d: 수동 모드 버튼 정지는 클릭 시점 기록 — 의심 결산 경로를 타지 않는다
+    expect(S().laps[0]!.suspect).toBe(false);
+    expect(S().laps[0]!.candidatesMs).toBeUndefined();
   });
 
   it("인식: 밀어서 시작 → learning→armed → 첫 통과 출발 → 복귀 정지(engine ms 델타)", async () => {

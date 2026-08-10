@@ -171,22 +171,27 @@ export const useLapStore = create<LapState>((set, get) => {
     },
 
     stopByButton: () => {
-      const { phase, _pendingSuspects, lapStart } = get();
+      const { phase, startMode, _pendingSuspects, lapStart } = get();
       if (phase === "running") {
-        // R10: 보류된 의심이 있으면 최초 의심 시각으로 의심 랩 기재 + 전 의심을 후보로 표시
-        // (R10-c, 시간순). 랩 하한 미만 의심은 후보에서 제외, 유효 후보가 없으면 버튼 정지
-        // 본연의 동작(현재 시각)으로 마감한다.
-        const startEngineMs = lapStart?.engineMs ?? null;
-        const valid =
-          startEngineMs !== null
-            ? _pendingSuspects.filter((p) => p.tMs - startEngineMs >= MIN_LAP_MS)
-            : [];
-        if (valid.length > 0) {
-          recordLap(valid[0]!.tMs, true, valid.map((p) => p.tMs - startEngineMs!));
-          if (get().phase === "running") recordLap(null, false);
-        } else {
-          recordLap(null, false);
+        // R10-d(사용자 확정): 의심 결산은 **밀어서 인식 시작(detect) 모드 전용**이다.
+        // 수동(탭) 시작은 버튼 클릭 시점을 그대로 기록한다 — 카메라도 꺼져 있어 의심이
+        // 존재할 수 없지만, 우연이 아니라 계약으로 고정한다.
+        if (startMode === "detect") {
+          // R10: 보류된 의심이 있으면 최초 의심 시각으로 의심 랩 기재 + 전 의심을 후보로 표시
+          // (R10-c, 시간순). 랩 하한 미만 의심은 후보에서 제외, 유효 후보가 없으면 버튼 정지
+          // 본연의 동작(현재 시각)으로 마감한다.
+          const startEngineMs = lapStart?.engineMs ?? null;
+          const valid =
+            startEngineMs !== null
+              ? _pendingSuspects.filter((p) => p.tMs - startEngineMs >= MIN_LAP_MS)
+              : [];
+          if (valid.length > 0) {
+            recordLap(valid[0]!.tMs, true, valid.map((p) => p.tMs - startEngineMs!));
+            if (get().phase === "running") recordLap(null, false);
+            return;
+          }
         }
+        recordLap(null, false); // 수동 모드 또는 유효 의심 없음 — 클릭 시점 기록
       } else if (phase === "learning" || phase === "armed") {
         get().cancel();
       }

@@ -12,7 +12,16 @@ interface Burst {
   peak: number;
   sig: Float64Array; // 누적 hue 히스토그램
   sigWeight: number;
+  /** R6: soft 프레임 수(연속) — soft 전용 burst의 과도 판정에 사용 */
+  softFrames: number;
+  /** R6: occlusion 임계를 넘은 프레임이 하나라도 있었는가 — soft 전용 burst와 판정 규칙 분리 */
+  hardSeen: boolean;
 }
+
+/** R6: soft 전용 burst가 이 프레임 수를 넘으면 통과(과도)가 아니라 지속 교란 — 기각 */
+const SOFT_MAX_FRAMES = 5;
+/** R6: soft 전용 burst 승인 최소 연속 프레임 수 — 단발 soft는 잡음일 수 있어 미승인 */
+const SOFT_MIN_FRAMES = 2;
 
 export interface LaptimeEngine {
   /** 한 프레임 처리. burst가 끝나 통과가 확정되면 PassEvent 1건을 담아 반환(대개 []). */
@@ -33,6 +42,8 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
   let lastRatio = 0;
   /** R2: 변화율이 vibration 이상(=배경 학습 차단 상태)로 연속된 시작 시각 — 자가 복구 판정용 */
   let elevatedSinceMs: number | null = null;
+  /** R6: soft burst 기각(지속 교란) 후 재개 억제 — vibration 미만으로 조용해져야 해제 */
+  let softSuppressed = false;
 
   function reset(): void {
     bg = null;
@@ -40,6 +51,29 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
     lastPassMs = -Infinity;
     lastRatio = 0;
     elevatedSinceMs = null;
+    softSuppressed = false;
+  }
+
+  function openBurst(tMs: number, hardSeen: boolean): Burst {
+    return {
+      startMs: tMs,
+      lastMs: tMs,
+      sumT: 0,
+      sumW: 0,
+      peak: 0,
+      sig: new Float64Array(options.hueBins + ACHRO_BINS),
+      sigWeight: 0,
+      softFrames: hardSeen ? 0 : 1,
+      hardSeen,
+    };
+  }
+
+  function extendBurst(b: Burst, frame: EngineFrame, background: Float32Array, tMs: number, ratio: number): void {
+    b.lastMs = tMs;
+    b.sumT += tMs * ratio;
+    b.sumW += ratio;
+    b.peak = Math.max(b.peak, ratio);
+    accumulateSignature(frame, background, b);
   }
 
   function changeRatio(luma: Uint8Array, background: Float32Array): number {
@@ -100,15 +134,12 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
     const events: PassEvent[] = [];
 
     if (ratio >= options.occlusionThreshold) {
-      // 가림 burst 진행 — 배경 갱신 금지(차를 배경으로 학습하지 않음)
-      if (burst === null) {
-        burst = { startMs: tMs, lastMs: tMs, sumT: 0, sumW: 0, peak: 0, sig: new Float64Array(options.hueBins + ACHRO_BINS), sigWeight: 0 };
-      }
-      burst.lastMs = tMs;
-      burst.sumT += tMs * ratio;
-      burst.sumW += ratio;
-      burst.peak = Math.max(burst.peak, ratio);
-      accumulateSignature(frame, bg, burst);
+      // 가림 burst 진행 — 배경 갱신 금지(차를 배경으로 학습하지 않음).
+      // soft 선행 프레임이 쌓여 있으면 그 burst에 합류(hardSeen 승격) — 선행 에지의 시각
+      // 기여가 통과 중심에 포함된다.
+      if (burst === null) burst = openBurst(tMs, true);
+      else burst.hardSeen = true;
+      extendBurst(burst, frame, bg, tMs, ratio);
       // R2 자가 복구(실기기: 정지 후 차·손이 레인 위에 머물면 burst가 영구 미종결 → 이후 감지
       // 전멸): 통과라기엔 너무 긴 가림은 장면 전환(폰 이동·주차된 차)이다 — burst 폐기 +
       // 배경을 현재 프레임으로 재시드해 잠금을 푼다. 통과 이벤트는 내지 않는다(차 통과 아님).
@@ -121,21 +152,48 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
       return events;
     }
 
-    // 비-가림
-    if (burst !== null) {
-      const centerMs = burst.sumW > 0 ? burst.sumT / burst.sumW : burst.startMs;
-      const durationMs = burst.lastMs - burst.startMs;
-      if (centerMs - lastPassMs >= options.minGapMs) {
-        lastPassMs = centerMs;
-        events.push({ tMs: centerMs, peakChangeRatio: burst.peak, durationMs, signature: finalizeSignature(burst) });
+    // R6 soft 구간(soft ≤ ratio < occlusion) — 짧은 과도만 통과 후보로 축적
+    const soft = ratio >= options.softOcclusionThreshold;
+    if (soft && burst !== null && !burst.hardSeen && burst.softFrames < SOFT_MAX_FRAMES) {
+      burst.softFrames += 1;
+      extendBurst(burst, frame, bg, tMs, ratio);
+      return events;
+    }
+    if (soft && burst === null) {
+      if (!softSuppressed) {
+        burst = openBurst(tMs, false);
+        extendBurst(burst, frame, bg, tMs, ratio);
       }
-      burst = null;
+      // 억제 중이면 아래 elevated 자가복구 로직으로 흘려보낸다 (지속 교란 → 2s 후 배경 재시드)
+      if (burst !== null) return events;
+    }
+
+    // burst 종결 판정 — hard는 기존 규칙(minGap), soft 전용은 "짧은 과도 형상"일 때만 통과
+    if (burst !== null) {
+      const softOnly = !burst.hardSeen;
+      if (softOnly && soft) {
+        // soft가 이어지는데 연장 한도(SOFT_MAX_FRAMES) 초과로 여기 도달 = 지속 교란 — 기각·억제
+        burst = null;
+        softSuppressed = true;
+      } else {
+        const accepted = !softOnly || burst.softFrames >= SOFT_MIN_FRAMES;
+        const centerMs = burst.sumW > 0 ? burst.sumT / burst.sumW : burst.startMs;
+        const durationMs = burst.lastMs - burst.startMs;
+        if (accepted && centerMs - lastPassMs >= options.minGapMs) {
+          lastPassMs = centerMs;
+          events.push({ tMs: centerMs, peakChangeRatio: burst.peak, durationMs, signature: finalizeSignature(burst) });
+        }
+        burst = null;
+        // hard burst가 soft 꼬리로 닫힌 경우 — 같은 차의 잔상이 새 soft burst를 열지 않게 억제
+        if (soft) softSuppressed = true;
+      }
     }
     // 진동(vibrationThreshold~occlusionThreshold 사이)은 통과도 아니고, 배경 학습 오염도 피한다.
     if (ratio < options.vibrationThreshold) {
       const a = options.bgLearnRate;
       for (let i = 0; i < n; i++) bg[i] = bg[i]! + a * (luma[i]! - bg[i]!);
       elevatedSinceMs = null;
+      softSuppressed = false; // R6: 조용해지면 soft 감지 재개
     } else {
       // R2 자가 복구 2(실기기: 통과 직후 자동노출 출렁임 등으로 변화율이 vibration~occlusion
       // 사이에 갇히면 배경 학습이 영구 차단 → 이후 감지 전멸): 이 중간 구간이 maxBurstMs 이상

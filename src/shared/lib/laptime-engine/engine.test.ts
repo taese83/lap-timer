@@ -173,11 +173,61 @@ describe("laptime-engine", () => {
       return { tMs, luma, rgb };
     };
     e.process(partial(0, 0)); // 배경 시드 (luma 100)
-    // 노출 출렁임 등으로 25%가 계속 변한 상태(가림 40% 미만·진동 15% 초과) — 종전엔 영구 고착
-    for (let t = 16; t <= 2400; t += 100) e.process(partial(t, 0.25));
+    // 노출 출렁임 등으로 25%가 계속 변한 상태(가림 40% 미만·진동 15% 초과) — 종전엔 영구 고착.
+    // R6: 처음 SOFT_MAX_FRAMES개는 soft burst로 흡수·기각된 뒤 elevated 타이머가 돌므로
+    // (실기기 ~83ms 지연, 이 타임라인에선 500ms) 지속 구간을 그만큼 길게 잡는다.
+    for (let t = 16; t <= 2800; t += 100) e.process(partial(t, 0.25));
     // 타임아웃 후 현재 장면이 새 배경 — 같은 장면은 변화율 0
-    e.process(partial(2500, 0.25));
+    e.process(partial(2900, 0.25));
     expect(e.lastChangeRatio).toBe(0);
+  });
+
+  it("R6 soft 과도: 연속 2프레임 20%대(임계 미달)도 통과로 인정", () => {
+    const e = mk();
+    const ev: ReturnType<typeof e.process> = [];
+    e.process(frame(0, 0)); // 배경 시드
+    ev.push(...e.process(frame(16, 0.22))); // soft (occlusion 0.4 미달, soft 0.18 이상)
+    ev.push(...e.process(frame(32, 0.24))); // soft 연속 2 — 과도 형상
+    ev.push(...e.process(frame(48, 0))); // 하강 에지 → 승인
+    expect(ev).toHaveLength(1);
+    expect(ev[0]!.peakChangeRatio).toBeCloseTo(0.25, 1);
+  });
+
+  it("R6 단발 soft 프레임은 통과가 아니다 (최소 연속 2)", () => {
+    const e = mk();
+    const ev: ReturnType<typeof e.process> = [];
+    e.process(frame(0, 0));
+    ev.push(...e.process(frame(16, 0.22)));
+    ev.push(...e.process(frame(32, 0))); // 1프레임뿐 → 미승인
+    expect(ev).toHaveLength(0);
+  });
+
+  it("R6 지속 soft(노출 출렁임)는 기각·억제 — 오탐 0, 조용해지면 재개", () => {
+    const e = mk();
+    const ev: ReturnType<typeof e.process> = [];
+    e.process(frame(0, 0));
+    for (let t = 16; t <= 16 * 12; t += 16) ev.push(...e.process(frame(t, 0.22))); // 12프레임 지속
+    ev.push(...e.process(frame(300, 0.22))); // 억제 중 — 새 burst 금지
+    ev.push(...e.process(frame(316, 0))); // 하강해도 승인 없음
+    expect(ev).toHaveLength(0);
+    // 조용해진 뒤(위 0 프레임에서 억제 해제) 정상 hard 통과는 감지된다
+    ev.push(...e.process(frame(700, 1)));
+    ev.push(...e.process(frame(716, 0)));
+    expect(ev).toHaveLength(1);
+  });
+
+  it("R6 soft 선행 + hard 결합은 이벤트 1건 (이중 트리거 없음)", () => {
+    const e = mk();
+    const ev: ReturnType<typeof e.process> = [];
+    e.process(frame(0, 0));
+    ev.push(...e.process(frame(16, 0.2))); // 선행 에지 soft
+    ev.push(...e.process(frame(32, 0.9))); // 본체 hard — soft burst 승격
+    ev.push(...e.process(frame(48, 0.2))); // 꼬리 soft — hard burst 종결·승인 + 억제
+    ev.push(...e.process(frame(64, 0)));
+    expect(ev).toHaveLength(1);
+    // 선행 에지(16ms)가 중심 계산에 포함됨 — 중심은 hard 프레임(32) 부근이되 16 쪽으로 당겨짐
+    expect(ev[0]!.tMs).toBeGreaterThan(16);
+    expect(ev[0]!.tMs).toBeLessThan(48);
   });
 
   it("reset 후 배경 재시드 — 이전 상태 이월 없음", () => {

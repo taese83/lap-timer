@@ -32,6 +32,8 @@ function tuningFromQuery(): Partial<EngineOptions> {
   };
   const occlusion = num("occlusion");
   if (occlusion !== null) overrides.occlusionThreshold = occlusion;
+  const softOcclusion = num("soft");
+  if (softOcclusion !== null) overrides.softOcclusionThreshold = softOcclusion;
   const vibration = num("vibration");
   if (vibration !== null) overrides.vibrationThreshold = vibration;
   const delta = num("delta");
@@ -59,10 +61,11 @@ export async function startCamera(
   };
 
   const stream = await navigator.mediaDevices.getUserMedia({
-    // 60fps 요청(ideal — 하드 제약 아님): 30km/h 통과 창(~20ms)이 30fps 간격(33ms)보다 짧아
-    // 60fps(16.7ms)여야 최소 1프레임이 물리적으로 보장된다. min을 걸면 지원 못 하는 기기에서
-    // getUserMedia 자체가 실패하므로 ideal만 쓴다.
-    video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 60 } },
+    // R6: 120fps 요청(ideal — 하드 제약 아님, 미지원 기기는 60/30으로 자동 하향). 30km/h 통과
+    // 창(~20ms)에 60fps는 1~2프레임, 120fps는 2~4프레임 — 피크 포착·타이밍(±4ms)·물리 보장
+    // 상한(35→70km/h)이 개선된다. 실효 콜백 수는 디스플레이 주사율에도 묶이므로(ProMotion
+    // 120Hz에서 최대 효과) 캡션의 실측 fps로 확인한다.
+    video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 120 } },
     audio: false,
   });
   video.srcObject = stream;

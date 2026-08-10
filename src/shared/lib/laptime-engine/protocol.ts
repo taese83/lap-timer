@@ -9,6 +9,13 @@ export interface EngineOptions {
   height: number;
   /** 가림 판정 임계 — 변한 픽셀 비율이 이 이상이면 통과 가림(brief R1: 40%). */
   occlusionThreshold: number;
+  /**
+   * R6 soft 가림 임계 — occlusion 미달이어도 이 이상인 프레임이 **연속 2~SOFT_MAX_FRAMES개**로
+   * 짧게 지나가면(과도 형상) 통과로 인정한다. 실속 통과에서 경계 프레임 2장이 각각 20%대에
+   * 걸려 놓치던 케이스 회수. 지속되는 중간 변화율(노출 출렁임)은 과도가 아니므로 기각 —
+   * 오탐 방어는 "짧음" 조건이 담당. vibrationThreshold보다 커야 한다.
+   */
+  softOcclusionThreshold: number;
   /** 진동 상한 — 이 아래 변화율은 트랙 진동으로 보고 무시(brief R1 임계 이원화, 15%). */
   vibrationThreshold: number;
   /** 픽셀 단위 luma 변화 임계(0~255) — 이 이상 달라진 픽셀만 "변함"으로 카운트. */
@@ -45,6 +52,7 @@ export const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
   // 오탐 방어는 vibrationThreshold(15%)·minGap·1-vs-rest 매칭이 그대로 담당. 현장 재조정은
   // URL 오버라이드(camera.ts: ?occlusion=0.4&delta=40 등)로 배포 없이 가능.
   occlusionThreshold: 0.3,
+  softOcclusionThreshold: 0.18,
   vibrationThreshold: 0.15,
   pixelDeltaThreshold: 28,
   bgLearnRate: 0.05,

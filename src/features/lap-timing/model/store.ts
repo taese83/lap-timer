@@ -11,12 +11,30 @@ const LEARN_MS = 1200;
 /** 랩 하한 — 출발 직후 재감지·이중 트리거 무시(brief 디바운스). */
 const MIN_LAP_MS = 800;
 /**
- * 색 시그니처 매칭 임계(L1 거리). **provisional — QA 첫 fixture 캘리브레이션에서 확정 후
- * write-back**(feature-plan HSV TC). 합성 검증: 동일 색 ≈0, 상이 색 ≈2.0.
+ * 색 시그니처 매칭 임계(L1 거리). 합성 검증: 동일 색 ≈0, 상이 색 ≈2.0.
  *  d ≤ MATCH: 타깃 / MATCH<d≤BORDER: 경계(의심 랩) / d>BORDER: 타차(무시).
+ *
+ * R3 실기기(2026-08-10): BORDER 1.0 → 1.5 — 실속 모션 블러·자동노출 변화로 같은 차의
+ * 통과 간 거리가 1.0을 넘어 복귀 통과가 "타차"로 버려짐(정지 안 됨의 직접 원인). 뚜렷이
+ * 다른 색(빨강↔초록)은 L1 ≈ 1.8~2.0이라 1.5로도 구분 유지. 경계 구간은 의심 랩 라벨이
+ * 오값 위험을 알린다. 현장 재조정: ?match=&border= URL 오버라이드.
  */
 const SIG_MATCH = 0.7;
-const SIG_BORDER = 1.0;
+const SIG_BORDER = 1.5;
+
+/** R3 현장 튜닝 — 배포 없이 매칭 임계 조정(camera.ts 엔진 오버라이드와 같은 패턴). */
+function sigThresholds(): { match: number; border: number } {
+  const search = globalThis.location?.search;
+  if (typeof search !== "string" || search === "") return { match: SIG_MATCH, border: SIG_BORDER };
+  const params = new URLSearchParams(search);
+  const num = (key: string, fallback: number): number => {
+    const raw = params.get(key);
+    if (raw === null) return fallback;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : fallback;
+  };
+  return { match: num("match", SIG_MATCH), border: num("border", SIG_BORDER) };
+}
 
 export type View = "measure" | "result";
 
@@ -97,7 +115,11 @@ export const useLapStore = create<LapState>((set, get) => {
       const t = setTimeout(() => {
         if (get().phase === "learning") set({ phase: "armed", _learnTimer: null });
       }, LEARN_MS);
-      set({ startMode: "detect", phase: "learning", _learnTimer: t });
+      // R3: 세션마다 타깃 재등록 — 카메라가 세션 단위로 새로 켜져(R2) 조명·노출이 달라지므로,
+      // 이전 세션의 낡은 시그니처와 매칭을 강요하면 첫 통과가 "타차"로 거부돼 시작 자체가 안
+      // 된다(실기기 증상). 세션 간 정체성은 "사용자가 자기 차를 먼저 출발시킨다"는 운영 규칙이
+      // 담당하고, 시그니처 매칭은 **주행 중 타차 통과 무시**(1-vs-rest 본연의 역할)에 쓴다.
+      set({ startMode: "detect", phase: "learning", _learnTimer: t, targetSig: null });
     },
 
     cancel: () => {
@@ -118,9 +140,9 @@ export const useLapStore = create<LapState>((set, get) => {
 
       if (phase === "armed") {
         if (targetSig === null) {
-          set({ targetSig: event.signature ?? [] }); // 최초 통과 = 자동 타깃 등록
+          set({ targetSig: event.signature ?? [] }); // 최초 통과 = 자동 타깃 등록 (세션마다, R3)
         } else if (event.signature) {
-          if (signatureDistance(event.signature, targetSig) > SIG_BORDER) {
+          if (signatureDistance(event.signature, targetSig) > sigThresholds().border) {
             set({ otherPass: otherPass + 1 }); // 다른 차 — 출발 아님
             return;
           }
@@ -131,12 +153,13 @@ export const useLapStore = create<LapState>((set, get) => {
 
       // running → 정지 판정
       if (startMode === "detect") {
+        const { match, border } = sigThresholds();
         const d = event.signature && targetSig ? signatureDistance(event.signature, targetSig) : 0;
-        if (d > SIG_BORDER) {
+        if (d > border) {
           set({ otherPass: otherPass + 1 }); // 타차 통과 무시
           return;
         }
-        recordLap(event.tMs, d > SIG_MATCH); // 경계면 의심 랩
+        recordLap(event.tMs, d > match); // 경계면 의심 랩
       } else {
         recordLap(event.tMs, false); // 수동 모드: 아무 통과나 결승선
       }

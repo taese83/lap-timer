@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "spawns": [
+    {
+      "run": "2026-08-05-laptime+fresh",
+      "phase": "Plan",
+      "agent": "source-artifact-ingestor",
+      "retry": false,
+      "tokens": 79713,
+      "toolUses": 21,
+      "durationMs": 535510,
+      "outcome": "complete"
+    },
+    {
+      "run": "2026-08-05-laptime+fresh",
+      "phase": "Plan",
+      "agent": "plan-reviewer",
+      "retry": false,
+      "tokens": 52791,
+      "toolUses": 16,
+      "durationMs": 146848,
+      "outcome": "complete"
+    },
+    {
+      "run": "2026-08-05-laptime+fresh",
+      "phase": "Plan-readiness",
+      "agent": "ux-researcher",
+      "retry": false,
+      "tokens": 42804,
+      "toolUses": 11,
+      "durationMs": 147504,
+      "outcome": "complete"
+    },
+    {
+      "run": "2026-08-05-laptime+fresh",
+      "phase": "Plan-readiness",
+      "agent": "feature-planner",
+      "retry": false,
+      "tokens": null,
+      "toolUses": null,
+      "durationMs": null,
+      "outcome": "crashed"
+    },
+    {
+      "run": "2026-08-05-laptime+fresh",
+      "phase": "Plan-readiness",
+      "agent": "feature-planner",
+      "retry": true,
+      "tokens": null,
+      "toolUses": null,
+      "durationMs": null,
+      "outcome": "crashed"
+    },
+    {
+      "run": "2026-08-05-laptime+fresh",
+      "phase": "Design-W1",
+      "agent": "design-system-architect",
+      "retry": false,
+      "tokens": 97289,
+      "toolUses": 29,
+      "durationMs": 585857,
+      "outcome": "truncated"
+    },
+    {
+      "run": "2026-08-05-laptime+fresh",
+      "phase": "Design-W1",
+      "agent": "layout-designer",
+      "retry": false,
+      "tokens": 80597,
+      "toolUses": 15,
+      "durationMs": 355130,
+      "outcome": "complete"
+    },
+    {
+      "run": "2026-08-05-laptime+fresh",
+      "phase": "Design-W1",
+      "agent": "state-contract-designer",
+      "retry": false,
+      "tokens": 58820,
+      "toolUses": 11,
+      "durationMs": 285418,
+      "outcome": "complete"
+    },
+    {
+      "run": "2026-08-05-laptime+fresh",
+      "phase": "Design-W2",
+      "agent": "component-designer",
+      "retry": false,
+      "tokens": 153226,
+      "toolUses": 37,
+      "durationMs": 795116,
+      "outcome": "truncated"
+    }
+  ]
+}

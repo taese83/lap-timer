@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover" />
+<title>minicar-laptime — 인터랙티브 프리뷰</title>
+<style>
+  :root{
+    color-scheme: dark;
+    --color-bg-app: oklch(0.09 0.005 250);
+    --color-bg-surface: oklch(0.15 0.006 250);
+    --color-bg-elevated: oklch(0.21 0.007 250);
+    --color-border-subtle: oklch(0.30 0.008 250);
+    --color-border-strong: oklch(0.42 0.008 250);
+    --color-text-secondary: oklch(0.75 0.005 250);
+    --color-text-primary: oklch(0.97 0.003 250);
+    --color-primary-solid: oklch(0.68 0.17 250);
+    --color-primary-text-on-solid: oklch(0.15 0.02 250);
+    --color-primary-text: oklch(0.80 0.14 250);
+    --color-primary-subtle-bg: oklch(0.20 0.05 250);
+    --color-primary-border: oklch(0.45 0.10 250);
+    --color-success-subtle-bg: oklch(0.22 0.05 150);
+    --color-success-solid: oklch(0.62 0.14 150);
+    --color-warning-subtle-bg: oklch(0.24 0.05 75);
+    --color-warning-border: oklch(0.50 0.10 75);
+    --color-warning-text: oklch(0.85 0.14 75);
+    --color-error-solid: oklch(0.60 0.19 25);
+    --color-error-border: oklch(0.48 0.14 25);
+    --color-error-text: oklch(0.80 0.13 25);
+    --size-chip: 48px;
+    --font-hero: clamp(3.5rem, 17vw, 6.5rem);
+    --font-display: 2rem; --font-h2: 1.5rem; --font-h3: 1.25rem;
+    --font-body: 1rem; --font-compact: .875rem; --font-caption: .75rem; --font-overline: .6875rem;
+    --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s6:24px;--s8:32px;
+    --target-cta:56px;--target-std:48px;
+    --r-sm:8px;--r-md:12px;--r-lg:20px;--r-full:999px;
+    --shadow: 0 4px 16px oklch(0 0 0 / .5);
+    --font-base: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--color-bg-app);color:var(--color-text-primary);font-family:var(--font-base);font-size:var(--font-body);line-height:1.5;-webkit-font-smoothing:antialiased}
+  .phone{max-width:420px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column}
+  .tnum{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  .btn{min-height:var(--target-std);border-radius:var(--r-md);font-size:var(--font-body);font-weight:600;padding:0 var(--s4);display:inline-flex;align-items:center;justify-content:center;gap:var(--s2);border:none;background:var(--color-bg-elevated);color:var(--color-text-primary)}
+  .btn:active{transform:scale(.98)}
+  .btn-primary{min-height:var(--target-cta);background:var(--color-primary-solid);color:var(--color-primary-text-on-solid);border:none;font-size:var(--font-h3);width:100%;border-radius:var(--r-lg);font-weight:700}
+  .btn-stop{background:var(--color-error-solid);color:oklch(0.15 0.02 25)}
+  .btn-danger{background:var(--color-error-subtle-bg);color:var(--color-error-text)}
+  .btn-ghost{background:transparent}
+  .iconbtn{min-height:40px;padding:0 var(--s3);background:transparent;border:none;color:var(--color-text-primary);font-size:var(--font-body);font-weight:600;display:inline-flex;align-items:center;gap:var(--s1)}
+  header.bar{display:flex;align-items:center;justify-content:space-between;padding:var(--s3) var(--s4);min-height:56px}
+  header.bar h1{font-size:var(--font-h3)}
+  .muted{color:var(--color-text-secondary)}
+  .overline{font-size:var(--font-overline);letter-spacing:.08em;text-transform:uppercase;color:var(--color-text-secondary);font-weight:500}
+  .caption{font-size:var(--font-caption);color:var(--color-text-secondary)}
+  .grow{flex:1}
+  .pad{padding:var(--s4)}
+
+  .segmented{display:flex;gap:4px;background:var(--color-bg-surface);border:1px solid var(--color-border-subtle);border-radius:var(--r-full);padding:4px;margin:var(--s3) var(--s4)}
+  .segmented button{flex:1;min-height:38px;border-radius:var(--r-full);font-size:var(--font-compact);color:var(--color-text-secondary);border:none;background:transparent}
+  .segmented button[aria-pressed="true"]{background:var(--color-primary-subtle-bg);color:var(--color-primary-text);font-weight:600}
+  .segmented button:disabled{opacity:.5}
+
+  .preview-strip{height:96px;background:var(--color-bg-surface);position:relative;overflow:hidden;display:grid;place-items:center}
+  .preview-strip .gate{position:absolute;inset:0;background:repeating-linear-gradient(90deg, transparent 0 22px, oklch(0.30 0.008 250 / .5) 22px 24px)}
+  .preview-strip .lens{color:var(--color-text-secondary);font-size:var(--font-caption);z-index:1}
+  .occl{position:absolute;inset:0;background:var(--color-text-primary);opacity:0;transition:opacity 90ms}
+  .banner{margin:var(--s3) var(--s4);padding:var(--s3) var(--s4);border-radius:var(--r-md);border:none;background:var(--color-bg-elevated);display:flex;flex-direction:column;gap:2px}
+  .banner .eyebrow{font-size:var(--font-overline);letter-spacing:.08em;font-weight:600;text-transform:uppercase}
+  .banner.info{background:var(--color-primary-subtle-bg);border-color:var(--color-primary-border)}
+  .banner.info .eyebrow{color:var(--color-primary-text)}
+  .banner.warning{background:var(--color-warning-subtle-bg);border-color:var(--color-warning-border)}
+  .banner.warning .eyebrow{color:var(--color-warning-text)}
+  .timer-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--s2);position:relative;padding:var(--s3)}
+  .timer{font-size:var(--font-hero);font-weight:700;letter-spacing:-.02em;line-height:1.02}
+  .timer.frozen{color:var(--color-text-secondary)}
+  .flash{position:absolute;inset:0;background:var(--color-success-solid);opacity:0;pointer-events:none;border-radius:var(--r-lg)}
+  .chip-wrap{display:flex;align-items:center;gap:var(--s2);min-height:var(--size-chip)}
+  .chip{width:var(--size-chip);height:var(--size-chip);border-radius:var(--r-full);border:2px solid var(--color-text-primary);box-shadow:0 0 0 3px oklch(0 0 0 / .55), var(--shadow)}
+  .statrow{display:flex;justify-content:space-around;padding:var(--s3) var(--s4)}
+  .stat{text-align:center}
+  .stat .v{font-size:var(--font-h2);font-weight:600}
+  .bottom-cta{padding:var(--s4)}
+  .slider{position:relative;height:var(--target-cta);border-radius:var(--r-lg);background:var(--color-bg-elevated);overflow:hidden;user-select:none;touch-action:none}
+  .slider-fill{position:absolute;inset:0;background:var(--color-primary-subtle-bg);width:0}
+  .slider-label{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding-left:180px;pointer-events:none}
+  .slider-hint{color:var(--color-text-secondary);font-weight:500;font-size:var(--font-body)}
+  .slider-thumb{position:absolute;top:4px;left:4px;height:calc(var(--target-cta) - 8px);min-width:172px;padding:0 var(--s6);border-radius:calc(var(--r-lg) - 4px);background:var(--color-primary-solid);color:var(--color-primary-text-on-solid);display:grid;place-items:center;font-size:var(--font-h3);font-weight:700;box-shadow:var(--shadow);pointer-events:none;white-space:nowrap}
+  .sim{background:oklch(0.13 0.02 300 / .6);padding:var(--s2) var(--s4)}
+  .sim .overline{color:oklch(.8 .1 300)}
+  .row{display:flex;gap:var(--s2);align-items:center;flex-wrap:wrap}
+
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:left;padding:var(--s3) var(--s4);font-size:var(--font-compact)}
+  tbody tr:nth-child(even) td{background:oklch(0.13 0.006 250)}
+  th{color:var(--color-text-secondary);font-weight:500;font-size:var(--font-caption)}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  tr.best td{background:var(--color-success-subtle-bg)}
+  .badge{display:inline-block;font-size:var(--font-overline);padding:1px 6px;border-radius:var(--r-full);background:var(--color-warning-subtle-bg);border:1px solid var(--color-warning-border);color:var(--color-warning-text)}
+  .summary{display:flex;justify-content:space-around;padding:var(--s4);background:var(--color-bg-surface);border-radius:var(--r-md);margin:var(--s4)}
+  .laplist{padding:0 var(--s4);display:flex;flex-direction:column;gap:2px}
+  .laprow{display:flex;justify-content:space-between;align-items:center;padding:var(--s3);border-radius:var(--r-sm);font-size:var(--font-body)}
+  .laprow.best{background:var(--color-success-subtle-bg)}
+  .laprow .tnum{font-weight:600}
+  .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:var(--color-bg-elevated);border:1px solid var(--color-border-strong);border-radius:var(--r-full);padding:var(--s2) var(--s4);font-size:var(--font-compact);box-shadow:var(--shadow);opacity:0;transition:opacity 150ms;pointer-events:none;max-width:90%;z-index:9}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="phone" id="app"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* minicar-laptime 프리뷰 v2 — 홈 제거, 랩타임이 첫 화면.
+   시작/정지 하단 토글 · 시작방식(차 인식|버튼) 선택 · 정지=버튼+차 인식 둘 다 · 단일 랩+누적.
+   카메라는 프로토타입 불가 → 통과를 시뮬레이터로 구동. */
+const store = { view:'measure', cur:newSession() };
+function newSession(){ return {id:'t'+Math.round(performance.now()), phase:'IDLE', targetHue:null, lapStartMs:null, laps:[], otherPass:0}; }
+
+const $ = (s,r=document)=>r.querySelector(s);
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),1500);}
+function fmt(ms){const s=Math.floor(ms/1000),cs=Math.floor((ms%1000)/10);return String(s).padStart(2,'0')+'.'+String(cs).padStart(2,'0');}
+function hueColor(h){return `oklch(0.62 0.19 ${h})`;}
+
+function bannerFor(s){
+  switch(s.phase){
+    case 'IDLE': return s.laps.length
+      ? {e:'대기', m:'다음 랩 — 밀어서 시작', v:'info'}
+      : {e:'준비', m:'밀어서 시작하면 차 첫 통과를 기다립니다', v:'info'};
+    case 'LEARNING': return {e:'LEARNING', m:'배경 학습 중…', v:'info'};
+    case 'ARMED': return {e:'ARMED', m:'차 첫 통과를 기다립니다', v:'info'};
+    case 'RUNNING': return {e:'RUNNING', m:'계측 중 — 복귀 통과 또는 정지', v:'info'};
+  }
+}
+
+let rafId=null;
+function startTimerLoop(){ if(rafId) return; const tick=()=>{ const s=store.cur;
+  if(s&&s.phase==='RUNNING'&&s.lapStartMs!=null){ store._elapsed=performance.now()-s.lapStartMs; const t=$('#timer'); if(t)t.textContent=fmt(store._elapsed); }
+  rafId=requestAnimationFrame(tick);}; rafId=requestAnimationFrame(tick); }
+function stopTimerLoop(){ if(rafId){cancelAnimationFrame(rafId);rafId=null;} }
+
+function render(){
+  const app=$('#app');
+  app.innerHTML = store.view==='result' ? viewResult() : viewMeasure();
+  bind();
+  if(store.view==='measure' && store.cur.phase==='RUNNING') startTimerLoop(); else stopTimerLoop();
+  if(store.view==='measure' && store.cur.phase==='IDLE') initSlider();
+}
+
+function viewMeasure(){
+  const s=store.cur; const b=bannerFor(s);
+  const running=s.phase==='RUNNING'; const arming=(s.phase==='LEARNING'||s.phase==='ARMED');
+  const last=s.laps.length?s.laps[s.laps.length-1]:null;
+  const best=s.laps.length?Math.min(...s.laps.map(l=>l.durationMs)):null;
+  const timerText = running?fmt(store._elapsed||0):(last?fmt(last.durationMs):'00.00');
+  const showChip = s.targetHue!=null;
+  return `
+  <header class="bar">
+    <h1>랩타임</h1>
+    ${s.laps.length?`<button class="iconbtn" data-openresult>기록 ${s.laps.length} →</button>`:''}
+  </header>
+  <div class="preview-strip" data-pass="target" style="cursor:pointer"><div class="gate"></div><span class="lens">◉ 카메라 게이트 (레인 내려봄)</span><div class="occl" id="occl"></div></div>
+  <div class="banner ${b.v}" id="banner"><span class="eyebrow">${b.e}</span><span>${b.m}</span></div>
+  <div class="timer-wrap">
+    <div class="flash" id="flash"></div>
+    <div class="overline">${running?'현재 랩':(last?'직전 랩':'랩타임')}</div>
+    <div class="timer tnum ${running?'':'frozen'}" id="timer">${timerText}</div>
+    <div class="chip-wrap">${showChip?`<button class="chip" data-rearm style="background:${hueColor(s.targetHue)}" title="새 타깃"></button><span class="caption">내 차 아니면 탭 →</span>`:'<span class="caption">&nbsp;</span>'}</div>
+  </div>
+  <div class="statrow">
+    <div class="stat"><div class="overline">직전</div><div class="v tnum">${last?fmt(last.durationMs):'—'}</div></div>
+    <div class="stat"><div class="overline">Best</div><div class="v tnum">${best!=null?fmt(best):'—'}</div></div>
+    <div class="stat"><div class="overline">랩</div><div class="v tnum">${s.laps.length}</div></div>
+  </div>
+  <div class="bottom-cta">${
+    (running||arming) ? `<button class="btn-primary btn-stop" data-stop>정지</button>`
+    : `<div class="slider" id="slider" role="button" aria-label="탭하면 수동 시작, 밀면 인식 시작"><div class="slider-fill" id="sliderfill"></div><span class="slider-label"><span class="slider-hint">밀어서 인식 시작 →</span></span><div class="slider-thumb" id="thumb">시작</div></div>`
+  }</div>`;
+}
+
+function viewResult(){
+  const s=store.cur;
+  const best=s.laps.length?Math.min(...s.laps.map(l=>l.durationMs)):null;
+  const avg=s.laps.length?s.laps.reduce((a,l)=>a+l.durationMs,0)/s.laps.length:null;
+  const sd=s.laps.length>1?Math.sqrt(s.laps.reduce((a,l)=>a+(l.durationMs-avg)**2,0)/s.laps.length):null;
+  const rows=s.laps.length?s.laps.map(l=>`<div class="laprow${l.durationMs===best?' best':''}"><span>랩 ${l.n} ${l.suspect?'<span class="badge">의심</span>':''}</span><span class="tnum">${fmt(l.durationMs)}</span></div>`).join('')
+    :`<p class="caption" style="text-align:center;padding:var(--s6)">기록된 랩이 없습니다</p>`;
+  return `
+  <header class="bar">
+    <div class="row" style="gap:var(--s1)">
+      <button class="iconbtn" data-back aria-label="뒤로" style="font-size:var(--font-h2);padding:0 var(--s1)">←</button>
+      <h1>기록</h1>
+    </div>
+    <span class="caption">${s.laps.length}랩</span>
+  </header>
+  <div class="statrow" style="padding-top:var(--s4);padding-bottom:var(--s4)">
+    <div class="stat"><div class="overline">Best</div><div class="v tnum">${best!=null?fmt(best):'—'}</div></div>
+    <div class="stat"><div class="overline">평균</div><div class="v tnum">${avg!=null?fmt(avg):'—'}</div></div>
+    <div class="stat"><div class="overline">편차 σ</div><div class="v tnum">${sd!=null?('±'+Math.round(sd)+'ms'):'—'}</div></div>
+  </div>
+  <div class="overline" style="padding:var(--s2) var(--s4)">랩 기록</div>
+  <div class="laplist">${rows}</div>
+  <p class="caption" style="padding:var(--s3) var(--s4)">다른 차 통과 ${s.otherPass}회 무시됨 · 타깃 색으로 내 차만 계측</p>
+  <div class="grow"></div>
+  <div class="bottom-cta"><button class="btn btn-danger" style="width:100%" data-reset>초기화</button></div>`;
+}
+
+/* ── 통과 피드백 ── */
+function occlude(){const o=$('#occl'); if(o){o.style.opacity=.85;setTimeout(()=>o.style.opacity=0,110);}}
+function flashPass(){const f=$('#flash'); if(f){f.style.transition='none';f.style.opacity=.7;requestAnimationFrame(()=>{f.style.transition='opacity 220ms';f.style.opacity=0;});} if(navigator.vibrate)navigator.vibrate(30);}
+
+/* ── 하단 단일 컨트롤: 탭 = 즉시 시작 / 밀기 = 인식 시작 ── */
+/* 탭 → 즉시 시작(버튼 모드) — 타이머 바로 시작, 정지는 버튼/통과 */
+function onStartNow(){ const s=store.cur; s.startMode='button'; s.phase='RUNNING'; s.lapStartMs=performance.now(); store._elapsed=0; toast('수동 시작'); render(); }
+/* 밀기 → 인식 시작(차 인식 모드) — ARMED로 대기, 첫 통과 시 출발 */
+function onStart(){ const s=store.cur; s.startMode='detect'; s.phase='LEARNING'; render();
+  setTimeout(()=>{ if(store.cur===s&&s.phase==='LEARNING'){s.phase='ARMED';render();} },1000); }
+/* 정지(버튼) — 계측 중 정지, 대기 중 취소 */
+function onStop(){ const s=store.cur;
+  if(s.phase==='RUNNING'){ stopLap('button'); return; }
+  if(s.phase==='LEARNING'||s.phase==='ARMED'){ s.phase='IDLE'; toast('취소'); render(); }
+}
+/* 슬라이더 제스처: thumb를 오른쪽 끝까지 밀면 onStart */
+function initSlider(){
+  const track=$('#slider'), thumb=$('#thumb'), fill=$('#sliderfill');
+  if(!track||!thumb) return;
+  const max=()=>track.clientWidth - thumb.clientWidth - 8;
+  let dragging=false, base=0, x=0, moved=0;
+  const setX=v=>{x=Math.max(0,Math.min(max(),v));thumb.style.transform=`translateX(${x}px)`;if(fill)fill.style.width=(x+thumb.clientWidth+4)+'px';};
+  const down=e=>{dragging=true;base=(e.clientX??0)-x;moved=0;thumb.style.transition='';try{track.setPointerCapture(e.pointerId);}catch(_){}};
+  const move=e=>{if(!dragging)return;const nx=(e.clientX??0)-base;moved=Math.max(moved,Math.abs(nx-x));setX(nx);};
+  const up=()=>{if(!dragging)return;dragging=false;
+    if(x>=max()*0.85){ onStart(); }                 // 끝까지 밀기 → 인식 시작
+    else if(moved<8){ onStartNow(); }               // 거의 안 움직임(탭) → 즉시 시작
+    else { thumb.style.transition='transform .16s'; setX(0); setTimeout(()=>thumb.style.transition='',180); } }; // 중간 → 취소
+  track.addEventListener('pointerdown',down);
+  track.addEventListener('pointermove',move);
+  track.addEventListener('pointerup',up);
+  track.addEventListener('pointercancel',up);
+  track._slide={setX,max}; // 테스트 훅
+}
+
+function stopLap(via){ // via: 'button' | 'target' | 'border'
+  const s=store.cur; const dur=performance.now()-s.lapStartMs;
+  s.laps.push({n:s.laps.length+1, durationMs:dur, suspect:via==='border'});
+  s.phase='IDLE'; store._elapsed=dur; stopTimerLoop(); flashPass();
+  toast('정지 '+fmt(dur)+(via==='border'?' (의심)':'')); render();
+}
+
+/* ── 카메라 통과(시뮬) ── */
+function onPass(kind){
+  const s=store.cur; occlude(); const now=performance.now();
+  if(s.phase==='IDLE'||s.phase==='LEARNING') return; // 대기/학습 중엔 통과 무시(시작 전)
+  if(s.phase==='ARMED'){
+    if(s.targetHue==null){ s.targetHue = kind==='target'?145:(kind==='other'?30:200); }
+    else if(kind==='other'){ s.otherPass++; toast('다른 차 — 무시'); return; }
+    s.phase='RUNNING'; s.lapStartMs=now; toast('출발 — 돌아오면 정지'); flashPass(); render(); return;
+  }
+  // RUNNING → 정지. 인식 모드는 타깃만(타차 무시), 버튼 모드는 아무 통과나 결승선.
+  if(s.startMode==='detect' && kind==='other'){ s.otherPass++; toast('다른 차 — 무시'); return; }
+  if(now-s.lapStartMs<800){ toast('디바운스 — 이중 트리거 무시'); return; }
+  stopLap(kind);
+}
+
+function bind(){
+  const on=(sel,ev,fn)=>document.querySelectorAll(sel).forEach(e=>e.addEventListener(ev,fn));
+  on('[data-stop]','click',onStop);
+  on('[data-pass]','click',e=>onPass(e.currentTarget.dataset.pass));
+  on('[data-rearm]','click',()=>{const s=store.cur;s.targetHue=null;toast('새 타깃 — 다음 통과를 새 차로');render();});
+  on('[data-openresult]','click',()=>{store.view='result';render();});
+  on('[data-back]','click',()=>{store.view='measure';render();});
+  on('[data-reset]','click',()=>{if(confirm('이 기록을 초기화할까요? 되돌릴 수 없습니다.')){store.cur=newSession();store._elapsed=0;store.view='measure';render();toast('초기화됨');}});
+}
+
+render();
+</script>
+</body>
+</html>

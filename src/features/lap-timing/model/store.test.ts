@@ -151,20 +151,26 @@ describe("lap store 상태머신", () => {
     expect(S().phase).toBe("armed");
   });
 
-  it("R11: 시작 직후 정지 버튼은 씹히지 않는다 — 기록 없이 즉시 종료 (수동/감지 공통)", async () => {
-    // 수동: 탭 시작 → 즉시 정지 (800ms 하한 안쪽)
+  it("R11-b: 수동 정지는 즉각 반응 + 하한 없이 클릭 시점 즉시 기록 (스톱워치 시맨틱)", async () => {
     S().startManual();
-    S().stopByButton();
+    await wait(120);
+    S().stopByButton(); // 800ms 하한 안쪽이어도 기록
     expect(S().phase).toBe("idle"); // 버튼은 항상 반응
-    expect(S().laps).toHaveLength(0); // 하한 미만 — 기록 없음(취소 시맨틱)
-    // 감지: 출발 통과 → 즉시 정지
+    expect(S().laps).toHaveLength(1);
+    const dur = S().laps[0]!.durationMs;
+    expect(dur).toBeGreaterThan(0);
+    expect(dur).toBeLessThan(800); // 하한 비적용 증명
+    expect(S().laps[0]!.suspect).toBe(false);
+  });
+
+  it("R11: 감지 모드에서 시작 직후 정지는 씹히지 않는다 — 하한 미만이면 기록 없이 종료", async () => {
     S().startDetect();
     S().cameraReady();
     await wait(1300);
     S().handlePass(pass(1000, green)); // 출발
     S().stopByButton(); // 시작 직후(하한 안쪽) 정지
-    expect(S().phase).toBe("idle");
-    expect(S().laps).toHaveLength(0);
+    expect(S().phase).toBe("idle"); // 버튼은 항상 반응
+    expect(S().laps).toHaveLength(0); // 감지 모드 하한 유지 — 기록 없음(취소 시맨틱)
   });
 
   it("디바운스: 800ms 미만 랩은 기록 안 함", async () => {

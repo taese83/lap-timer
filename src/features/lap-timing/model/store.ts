@@ -92,7 +92,7 @@ export const useLapStore = create<LapState>((set, get) => {
     if (get()._pendingSuspects.length > 0) set({ _pendingSuspects: [] });
   }
 
-  function recordLap(stopEngineMs: number | null, suspect: boolean, candidatesMs?: number[]): void {
+  function recordLap(stopEngineMs: number | null, suspect: boolean, candidatesMs?: number[], enforceMin = true): void {
     clearSuspect();
     const { lapStart, laps, startedAt, otherPass } = get();
     if (!lapStart) return;
@@ -100,7 +100,9 @@ export const useLapStore = create<LapState>((set, get) => {
       lapStart.engineMs != null && stopEngineMs != null
         ? stopEngineMs - lapStart.engineMs
         : performance.now() - lapStart.perfMs;
-    if (dur < MIN_LAP_MS) {
+    // R11-b(사용자 확정): 랩 하한은 **감지 모드 전용**(통과 이중 트리거 방어) — 수동(탭) 정지는
+    // 스톱워치 시맨틱이라 enforceMin=false로 하한 없이 즉시 기록한다.
+    if (enforceMin && dur < MIN_LAP_MS) {
       set({ lastEvent: `통과 ${Math.round(dur)}ms — 랩 하한(${MIN_LAP_MS}ms) 미만 무시` });
       return; // 디바운스
     }
@@ -173,30 +175,28 @@ export const useLapStore = create<LapState>((set, get) => {
     stopByButton: () => {
       const { phase, startMode, _pendingSuspects, lapStart } = get();
       if (phase === "running") {
-        // R10-d(사용자 확정): 의심 결산은 **밀어서 인식 시작(detect) 모드 전용**이다.
-        // 수동(탭) 시작은 버튼 클릭 시점을 그대로 기록한다 — 카메라도 꺼져 있어 의심이
-        // 존재할 수 없지만, 우연이 아니라 계약으로 고정한다.
-        if (startMode === "detect") {
-          // R10: 보류된 의심이 있으면 최초 의심 시각으로 의심 랩 기재 + 전 의심을 후보로 표시
-          // (R10-c, 시간순). 랩 하한 미만 의심은 후보에서 제외, 유효 후보가 없으면 버튼 정지
-          // 본연의 동작(현재 시각)으로 마감한다.
-          const startEngineMs = lapStart?.engineMs ?? null;
-          const valid =
-            startEngineMs !== null
-              ? _pendingSuspects.filter((p) => p.tMs - startEngineMs >= MIN_LAP_MS)
-              : [];
-          if (valid.length > 0) {
-            recordLap(valid[0]!.tMs, true, valid.map((p) => p.tMs - startEngineMs!));
-            if (get().phase === "running") recordLap(null, false);
-          }
+        // R11-b(사용자 확정): 수동(탭) 시작의 정지는 **즉각 반응 + 클릭 시점 즉시 기록** —
+        // 스톱워치 시맨틱, 랩 하한 비적용. 의심 결산·랩 하한 규칙은 감지 모드 전용(R10-d).
+        if (startMode !== "detect") {
+          recordLap(null, false, undefined, false);
+          return;
         }
-        if (get().phase === "running") {
-          recordLap(null, false); // 수동 모드 또는 유효 의심 없음 — 클릭 시점 기록
+        // R10: 보류된 의심이 있으면 최초 의심 시각으로 의심 랩 기재 + 전 의심을 후보로 표시
+        // (R10-c, 시간순). 랩 하한 미만 의심은 후보에서 제외, 유효 후보가 없으면 버튼 정지
+        // 본연의 동작(현재 시각)으로 마감한다.
+        const startEngineMs = lapStart?.engineMs ?? null;
+        const valid =
+          startEngineMs !== null
+            ? _pendingSuspects.filter((p) => p.tMs - startEngineMs >= MIN_LAP_MS)
+            : [];
+        if (valid.length > 0) {
+          recordLap(valid[0]!.tMs, true, valid.map((p) => p.tMs - startEngineMs!));
+          if (get().phase === "running") recordLap(null, false);
+        } else {
+          recordLap(null, false); // 유효 의심 없음 — 클릭 시점 기록 (하한 적용)
         }
-        // R11(실기기: 시작 직후 정지가 씹힘): recordLap은 랩 하한(MIN_LAP_MS) 미만이면 기록을
-        // 거부하고 running을 유지한다 — 감지 이중 트리거 방어이지 사용자 버튼용이 아니다.
-        // 버튼 정지는 **항상 반응**해야 하므로, 여기까지 running이면 기록 없이 종료한다
-        // (시작 직후 오조작 = 취소 시맨틱).
+        // R11(실기기: 시작 직후 정지가 씹힘): 버튼 정지는 **항상 반응** — 감지 모드에서 랩
+        // 하한(MIN_LAP_MS) 미만이라 기록이 거부됐으면 기록 없이 종료(오조작 = 취소 시맨틱).
         if (get().phase === "running") {
           clearSuspect();
           set({ phase: "idle", lapStart: null, lastEvent: `정지 — 랩 하한(${MIN_LAP_MS}ms) 미만, 기록 없음` });

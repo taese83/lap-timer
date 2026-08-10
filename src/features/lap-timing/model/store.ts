@@ -188,10 +188,19 @@ export const useLapStore = create<LapState>((set, get) => {
           if (valid.length > 0) {
             recordLap(valid[0]!.tMs, true, valid.map((p) => p.tMs - startEngineMs!));
             if (get().phase === "running") recordLap(null, false);
-            return;
           }
         }
-        recordLap(null, false); // 수동 모드 또는 유효 의심 없음 — 클릭 시점 기록
+        if (get().phase === "running") {
+          recordLap(null, false); // 수동 모드 또는 유효 의심 없음 — 클릭 시점 기록
+        }
+        // R11(실기기: 시작 직후 정지가 씹힘): recordLap은 랩 하한(MIN_LAP_MS) 미만이면 기록을
+        // 거부하고 running을 유지한다 — 감지 이중 트리거 방어이지 사용자 버튼용이 아니다.
+        // 버튼 정지는 **항상 반응**해야 하므로, 여기까지 running이면 기록 없이 종료한다
+        // (시작 직후 오조작 = 취소 시맨틱).
+        if (get().phase === "running") {
+          clearSuspect();
+          set({ phase: "idle", lapStart: null, lastEvent: `정지 — 랩 하한(${MIN_LAP_MS}ms) 미만, 기록 없음` });
+        }
       } else if (phase === "learning" || phase === "armed") {
         get().cancel();
       }

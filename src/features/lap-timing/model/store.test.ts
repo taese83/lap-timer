@@ -151,6 +151,22 @@ describe("lap store 상태머신", () => {
     expect(S().phase).toBe("armed");
   });
 
+  it("R11: 시작 직후 정지 버튼은 씹히지 않는다 — 기록 없이 즉시 종료 (수동/감지 공통)", async () => {
+    // 수동: 탭 시작 → 즉시 정지 (800ms 하한 안쪽)
+    S().startManual();
+    S().stopByButton();
+    expect(S().phase).toBe("idle"); // 버튼은 항상 반응
+    expect(S().laps).toHaveLength(0); // 하한 미만 — 기록 없음(취소 시맨틱)
+    // 감지: 출발 통과 → 즉시 정지
+    S().startDetect();
+    S().cameraReady();
+    await wait(1300);
+    S().handlePass(pass(1000, green)); // 출발
+    S().stopByButton(); // 시작 직후(하한 안쪽) 정지
+    expect(S().phase).toBe("idle");
+    expect(S().laps).toHaveLength(0);
+  });
+
   it("디바운스: 800ms 미만 랩은 기록 안 함", async () => {
     S().startDetect();
     S().cameraReady();

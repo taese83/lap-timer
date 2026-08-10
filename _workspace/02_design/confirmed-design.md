@@ -185,3 +185,12 @@ Lap.candidatesMs는 additive optional(구 레코드 안전). 후보 1건이면 �
 버튼 정지의 의심 결산(최초 의심 시각 채택 + 후보 표기)은 **밀어서 인식 시작(detect)일 때만**.
 수동(탭) 시작의 버튼 정지는 항상 클릭 시점 기록 — 수동은 카메라가 꺼져 있어 의심이 생길 수
 없지만 startMode 가드로 계약을 명시 고정.
+
+## R-hybrid-1 (2026-08-11) — Capacitor iOS 셸
+
+네이티브 하이브리드 1단계(사용자 확정 로드맵). Capacitor 8.5(SPM — CocoaPods 불요),
+appId dev.taese83.laptime, webDir dist. ios/App = Xcode 프로젝트(커밋), dist 복사본·빌드
+산출물은 Capacitor 기본 .gitignore가 제외. NSCameraUsageDescription 추가. safe-area
+패딩(.bar/.bottom-cta — 웹은 env=0이라 무변화, 실측 12/16px 확인). 웹 배포(Vercel) 공존.
+다음: ② HighFpsCamera 플러그인(240fps+노출/AWB 잠금+네이티브 다운스케일).
+빌드·서명은 Xcode.app 필요(이 맥 미설치 — 사용자 설치 후 진행).

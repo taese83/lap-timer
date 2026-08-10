@@ -17,12 +17,15 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/ios": "^8.5.0",
     "idb": "8.0.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "zustand": "5.0.2"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.0",
     "@types/react": "19.0.1",
     "@types/react-dom": "19.0.1",
     "@vitejs/plugin-react": "4.3.4",

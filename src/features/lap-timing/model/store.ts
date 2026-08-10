@@ -21,19 +21,10 @@ const MIN_LAP_MS = 800;
  */
 const SIG_MATCH = 0.7;
 const SIG_BORDER = 1.5;
-/**
- * R10 의심 정지 유예(ms) — 의심 구간(MATCH<d≤BORDER) 통과는 즉시 멈추지 않고 이 시간 동안
- * 확정 매치(d≤MATCH)를 기다린다. 비슷한 색의 타차가 의심으로 타이머를 끊던 실기기 증상 대응:
- * 확정이 오면 그것으로 정지(의심 통과는 타차였던 것), 안 오면 의심 통과의 **원래 시각**으로
- * 정지(랩타임은 통과 tMs 기준이라 유예가 기록을 왜곡하지 않음 — 표시만 늦게 확정).
- * 0이면 종전 즉시 의심 정지. ?grace= 오버라이드.
- */
-const SUSPECT_GRACE_MS = 2000;
-
 /** R3 현장 튜닝 — 배포 없이 매칭 임계 조정(camera.ts 엔진 오버라이드와 같은 패턴). */
-function sigThresholds(): { match: number; border: number; graceMs: number } {
+function sigThresholds(): { match: number; border: number } {
   const search = globalThis.location?.search;
-  const defaults = { match: SIG_MATCH, border: SIG_BORDER, graceMs: SUSPECT_GRACE_MS };
+  const defaults = { match: SIG_MATCH, border: SIG_BORDER };
   if (typeof search !== "string" || search === "") return defaults;
   const params = new URLSearchParams(search);
   const num = (key: string, fallback: number): number => {
@@ -42,11 +33,7 @@ function sigThresholds(): { match: number; border: number; graceMs: number } {
     const value = Number(raw);
     return Number.isFinite(value) ? value : fallback;
   };
-  return {
-    match: num("match", SIG_MATCH),
-    border: num("border", SIG_BORDER),
-    graceMs: num("grace", SUSPECT_GRACE_MS),
-  };
+  return { match: num("match", SIG_MATCH), border: num("border", SIG_BORDER) };
 }
 
 export type View = "measure" | "result";
@@ -70,9 +57,13 @@ interface LapState {
   /** R4 판정 로그(현장 진단) — 마지막 통과 이벤트에 대한 상태머신의 결정 1줄 */
   lastEvent: string | null;
   _learnTimer: ReturnType<typeof setTimeout> | null;
-  /** R10 의심 정지 유예 — 확정 대기 중인 의심 통과(최소 d 유지) */
+  /**
+   * R10(사용자 확정 흐름) — 보류된 의심 통과. 의심(MATCH<d≤BORDER)이 오면 **시각만 기록하고
+   * 타이머는 계속** 진행한다. 이후 확정 매치(d≤MATCH)가 오면 그것으로 정지하며 의심 기록은
+   * 삭제, 확정 없이 버튼으로 정지하면 이 의심 시각을 랩타임으로 기재하고 의심 표시한다.
+   * 최초 의심을 유지(뒤따르는 의심은 교체하지 않음 — 먼저 통과한 쪽이 결승 후보).
+   */
   _pendingSuspect: { tMs: number; d: number } | null;
-  _suspectTimer: ReturnType<typeof setTimeout> | null;
 
   hydrate: () => Promise<void>;
   startManual: () => void;
@@ -96,11 +87,9 @@ function persist(s: Pick<LapState, "startedAt" | "laps" | "otherPass">): void {
 }
 
 export const useLapStore = create<LapState>((set, get) => {
-  /** R10: 의심 유예 상태 해제 — 확정 정지·버튼 정지·세션 이탈 모든 경로에서 호출 */
+  /** R10: 보류 의심 해제 — 정지(확정/버튼)·세션 이탈 모든 경로에서 호출 */
   function clearSuspect(): void {
-    const { _suspectTimer } = get();
-    if (_suspectTimer) clearTimeout(_suspectTimer);
-    set({ _pendingSuspect: null, _suspectTimer: null });
+    if (get()._pendingSuspect !== null) set({ _pendingSuspect: null });
   }
 
   function recordLap(stopEngineMs: number | null, suspect: boolean): void {
@@ -141,7 +130,6 @@ export const useLapStore = create<LapState>((set, get) => {
     lastEvent: null,
     _learnTimer: null,
     _pendingSuspect: null,
-    _suspectTimer: null,
 
     hydrate: async () => {
       const cur = await loadCurrent();
@@ -180,9 +168,20 @@ export const useLapStore = create<LapState>((set, get) => {
     },
 
     stopByButton: () => {
-      const { phase } = get();
-      if (phase === "running") recordLap(null, false);
-      else if (phase === "learning" || phase === "armed") get().cancel();
+      const { phase, _pendingSuspect } = get();
+      if (phase === "running") {
+        // R10: 보류된 의심이 있으면 그 통과 시각으로 의심 랩 기재 — "확정 없이 정지하면
+        // 의심 판단 정보를 그대로 랩타임에 기재"(사용자 확정). 의심이 랩 하한 미만이라
+        // 기록되지 못하면 버튼 정지 본연의 동작(현재 시각)으로 마감한다.
+        if (_pendingSuspect !== null) {
+          recordLap(_pendingSuspect.tMs, true);
+          if (get().phase === "running") recordLap(null, false);
+        } else {
+          recordLap(null, false);
+        }
+      } else if (phase === "learning" || phase === "armed") {
+        get().cancel();
+      }
     },
 
     handlePass: (event) => {
@@ -207,31 +206,25 @@ export const useLapStore = create<LapState>((set, get) => {
 
       // running → 정지 판정
       if (startMode === "detect") {
-        const { match, border, graceMs } = sigThresholds();
+        const { match, border } = sigThresholds();
         const d = event.signature && targetSig ? signatureDistance(event.signature, targetSig) : 0;
         if (d > border) {
           set({ otherPass: otherPass + 1, lastEvent: `타차 통과 d=${d.toFixed(2)} 무시 (임계 ${border})` });
           return;
         }
-        if (d <= match || graceMs <= 0) {
-          recordLap(event.tMs, d > match); // 확정 매치(또는 유예 비활성) — 즉시 정지
+        if (d <= match) {
+          recordLap(event.tMs, false); // 확정 매치 — 즉시 정지, 보류 의심은 recordLap이 삭제
           return;
         }
-        // R10 의심 유예 — 즉시 멈추지 않고 확정 매치를 기다린다 (파일 상단 SUSPECT_GRACE_MS 주석).
-        // 유예 중 더 그럴듯한 의심(d 더 작음)이 오면 교체, 확정이 오면 위 분기가 정지+해제.
+        // R10(사용자 확정 흐름): 의심은 시각만 보류하고 타이머는 계속 — _pendingSuspect 주석 참조
         const pending = get()._pendingSuspect;
-        if (pending === null || d < pending.d) {
-          set({ _pendingSuspect: { tMs: event.tMs, d } });
-        }
-        set({ lastEvent: `의심 통과 d=${d.toFixed(2)} — ${(graceMs / 1000).toFixed(1)}s 확정 대기` });
-        if (get()._suspectTimer === null) {
-          const t = setTimeout(() => {
-            const p = get()._pendingSuspect;
-            set({ _pendingSuspect: null, _suspectTimer: null });
-            // 유예 만료 — 확정이 안 왔으니 의심 통과의 원래 시각으로 정지 (의심 랩)
-            if (p !== null && get().phase === "running") recordLap(p.tMs, true);
-          }, graceMs);
-          set({ _suspectTimer: t });
+        if (pending === null) {
+          set({
+            _pendingSuspect: { tMs: event.tMs, d },
+            lastEvent: `의심 통과 d=${d.toFixed(2)} 기록 — 계측 계속 (확정 시 대체, 정지 시 의심 랩)`,
+          });
+        } else {
+          set({ lastEvent: `의심 통과 d=${d.toFixed(2)} — 최초 의심(${(pending.tMs / 1000).toFixed(2)}s) 유지` });
         }
       } else {
         recordLap(event.tMs, false); // 수동 모드: 아무 통과나 결승선

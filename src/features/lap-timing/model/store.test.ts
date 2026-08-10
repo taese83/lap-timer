@@ -52,35 +52,46 @@ describe("lap store 상태머신", () => {
     expect(Math.round(S().laps[0]!.durationMs)).toBe(3000);
   });
 
-  it("경계 색 매칭은 즉시 멈추지 않고(R10 유예) 만료 후 의심 랩으로 기록", async () => {
+  it("R10: 의심 통과는 시각만 보류하고 타이머 계속 — 버튼 정지 시 의심 시각으로 의심 랩", async () => {
     S().startDetect();
     S().cameraReady();
     await wait(1300);
-    S().handlePass(pass(1000, green));
+    S().handlePass(pass(1000, green)); // 출발
     const border = Array.from({ length: 12 }, (_, i) => (i === 4 ? 0.6 : i === 5 ? 0.4 : 0)); // green과 L1=0.8 ∈(0.7,1.5]
-    S().handlePass(pass(3000, border));
-    expect(S().phase).toBe("running"); // R10: 의심은 즉시 정지 아님 — 확정 대기
+    S().handlePass(pass(3000, border)); // 의심 — 기록만, 정지 없음
+    expect(S().phase).toBe("running"); // 타이머 계속
     expect(S().laps).toHaveLength(0);
-    await wait(2200); // 유예(2s) 만료
+    S().stopByButton(); // 확정 없이 정지 → 의심 판단 정보를 그대로 기재
     expect(S().laps).toHaveLength(1);
     expect(S().laps[0]!.suspect).toBe(true);
-    expect(Math.round(S().laps[0]!.durationMs)).toBe(2000); // 의심 통과의 원래 시각(3000) 기준
+    expect(Math.round(S().laps[0]!.durationMs)).toBe(2000); // 의심 통과 시각(3000) 기준, 버튼 누른 시각 아님
   });
 
-  it("R10: 유예 중 확정 매치가 오면 그것으로 정지 — 의심은 타차였던 것", async () => {
+  it("R10: 이후 확정 매치가 오면 그것으로 정지하고 의심 기록은 삭제", async () => {
     S().startDetect();
     S().cameraReady();
     await wait(1300);
     S().handlePass(pass(1000, green)); // 출발
     const border = Array.from({ length: 12 }, (_, i) => (i === 4 ? 0.6 : i === 5 ? 0.4 : 0));
-    S().handlePass(pass(3000, border)); // 비슷한 타차 — 의심, 유예 시작
+    S().handlePass(pass(3000, border)); // 비슷한 타차 — 의심 보류
     expect(S().phase).toBe("running");
-    S().handlePass(pass(3500, green)); // 내 차 확정 매치 — 즉시 정지
+    S().handlePass(pass(5000, green)); // 내 차 확정 매치 — 즉시 정지, 의심 폐기
     expect(S().laps).toHaveLength(1);
     expect(S().laps[0]!.suspect).toBe(false);
-    expect(Math.round(S().laps[0]!.durationMs)).toBe(2500); // 확정 통과 시각 기준
-    await wait(2200); // 남은 유예 타이머가 이중 기록을 만들지 않는다
+    expect(Math.round(S().laps[0]!.durationMs)).toBe(4000); // 확정 통과 시각 기준
+  });
+
+  it("R10: 뒤따르는 의심은 최초 의심을 대체하지 않는다", async () => {
+    S().startDetect();
+    S().cameraReady();
+    await wait(1300);
+    S().handlePass(pass(1000, green));
+    const border = Array.from({ length: 12 }, (_, i) => (i === 4 ? 0.6 : i === 5 ? 0.4 : 0));
+    S().handlePass(pass(3000, border)); // 최초 의심
+    S().handlePass(pass(4500, border)); // 후속 의심 — 무시(최초 유지)
+    S().stopByButton();
     expect(S().laps).toHaveLength(1);
+    expect(Math.round(S().laps[0]!.durationMs)).toBe(2000); // 최초 의심(3000) 기준
   });
 
   it("R3: 새 감지 세션은 타깃을 재등록한다 — 이전 세션 시그니처가 시작을 막지 않음", async () => {

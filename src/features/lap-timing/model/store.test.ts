@@ -26,6 +26,7 @@ describe("lap store 상태머신", () => {
 
   it("인식: 밀어서 시작 → learning→armed → 첫 통과 출발 → 복귀 정지(engine ms 델타)", async () => {
     S().startDetect();
+    S().cameraReady();
     expect(S().phase).toBe("learning");
     await wait(1300);
     expect(S().phase).toBe("armed");
@@ -40,6 +41,7 @@ describe("lap store 상태머신", () => {
 
   it("타차 통과 무시 + 랩 누적", async () => {
     S().startDetect();
+    S().cameraReady();
     await wait(1300);
     S().handlePass(pass(5000, green)); // 출발
     S().handlePass(pass(6000, red)); // 타차 → 무시
@@ -52,6 +54,7 @@ describe("lap store 상태머신", () => {
 
   it("경계 색 매칭은 의심 랩", async () => {
     S().startDetect();
+    S().cameraReady();
     await wait(1300);
     S().handlePass(pass(1000, green));
     const border = Array.from({ length: 12 }, (_, i) => (i === 4 ? 0.6 : i === 5 ? 0.4 : 0)); // green과 L1=0.8 ∈(0.7,1.0]
@@ -63,6 +66,7 @@ describe("lap store 상태머신", () => {
   it("R3: 새 감지 세션은 타깃을 재등록한다 — 이전 세션 시그니처가 시작을 막지 않음", async () => {
     // 세션 1: 초록 차 등록 → 복귀로 랩 1
     S().startDetect();
+    S().cameraReady();
     await wait(1300);
     S().handlePass(pass(1000, green));
     S().handlePass(pass(3000, green));
@@ -70,6 +74,7 @@ describe("lap store 상태머신", () => {
     expect(S().phase).toBe("idle");
     // 세션 2: 조명·노출이 바뀌어 첫 통과가 빨강처럼 보여도(이전 타깃과 원거리) 시작돼야 한다
     S().startDetect();
+    S().cameraReady();
     expect(S().targetSig).toBeNull(); // 세션 진입 시 타깃 초기화
     await wait(1300);
     S().handlePass(pass(10000, red));
@@ -78,8 +83,18 @@ describe("lap store 상태머신", () => {
     expect(S().laps).toHaveLength(2); // 복귀 정지도 새 타깃 기준으로 성립
   });
 
+  it("R4: 카메라 준비 전에는 armed로 넘어가지 않는다 (learning 유지)", async () => {
+    S().startDetect(); // cameraReady 없음 — 스트림이 안 선 상황
+    await wait(1400);
+    expect(S().phase).toBe("learning");
+    S().cameraReady(); // 스트림 확립 → 이제부터 학습
+    await wait(1300);
+    expect(S().phase).toBe("armed");
+  });
+
   it("디바운스: 800ms 미만 랩은 기록 안 함", async () => {
     S().startDetect();
+    S().cameraReady();
     await wait(1300);
     S().handlePass(pass(1000, green)); // 출발
     S().handlePass(pass(1200, green)); // 200ms → 디바운스

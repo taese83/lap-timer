@@ -33,6 +33,7 @@ export function MeasureScreen() {
   // 새로 만들어져 stale 배경 고착(실기기 감지 전멸 원인)이 구조적으로 사라지고, 대기 중 배터리·
   // 권한 노출도 없다. 수동(탭) 계측은 카메라 없이 버튼 정지 전용.
   const detectSession = s.startMode === "detect" && s.phase !== "idle";
+  const [camError, setCamError] = useState<string | null>(null);
   useEffect(() => {
     if (!detectSession) return;
     const v = videoRef.current;
@@ -50,9 +51,12 @@ export function MeasureScreen() {
         }
         handleRef.current = h;
         setFps(h.fps);
+        // R4: 스트림이 실제로 선 뒤에야 배경 학습 타이머 시작 (카메라 늦게 켜지는 기기 레이스 제거)
+        useLapStore.getState().cameraReady();
       })
-      .catch(() => {
-        /* 카메라 불가(권한/비-secure) — 버튼 정지는 여전히 가능 */
+      .catch((err: unknown) => {
+        // R4: 침묵 삼킴 금지 — 실패 사유를 캡션에 그대로 노출해 현장 진단 가능하게
+        setCamError(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
       });
     return () => {
       cancelled = true;
@@ -60,6 +64,7 @@ export function MeasureScreen() {
       handleRef.current = null;
       setFps(null);
       setStats(null);
+      setCamError(null);
     };
   }, [detectSession]);
 
@@ -100,28 +105,36 @@ export function MeasureScreen() {
       <div className="preview-strip">
         <video ref={videoRef} className="preview-video" playsInline muted />
         <span className="lens">
-          {detectSession ? (
+          {!detectSession ? (
+            <>◉ 카메라 — 밀어서 시작하면 켜짐</>
+          ) : camError !== null ? (
+            <span style={{ color: "var(--warning, #f0b429)" }}>⚠ 카메라 실패 · {camError}</span>
+          ) : fps === null ? (
+            <>◉ 카메라 켜는 중…</>
+          ) : (
             <>
-              ◉ 카메라 게이트
-              {fps !== null && (
-                // 30km/h 인식 보장은 60fps 필요(조사 R1) — 50 미만이면 경고색
-                <span style={fps < 50 ? { color: "var(--warning, #f0b429)" } : undefined}> · {fps}fps</span>
-              )}
+              ◉
+              {/* 30km/h 인식 보장은 60fps 필요(조사 R1) — 50 미만이면 경고색 */}
+              <span style={fps < 50 ? { color: "var(--warning, #f0b429)" } : undefined}> {fps}fps</span>
               {stats !== null && (
-                // R2 진단 미터: 최근 피크 변화율 — 임계 도달 시 라임(감지 가능 배치·조명 증명)
+                // R2 진단 미터: 피크 변화율(임계 도달 시 라임) + 누적 프레임(0 고착 = 파이프 사망)
                 <span style={{ color: stats.peak >= stats.threshold ? "var(--lime, #a3e635)" : undefined }}>
-                  {" "}· 피크 {Math.round(stats.peak * 100)}%/{Math.round(stats.threshold * 100)}%
+                  {" "}· 피크 {Math.round(stats.peak * 100)}%/{Math.round(stats.threshold * 100)}% · f{stats.frames}
                 </span>
               )}
             </>
-          ) : (
-            <>◉ 카메라 — 밀어서 시작하면 켜짐</>
           )}
         </span>
       </div>
       <div className={`banner ${banner.v}`}>
         <span className="eyebrow">{banner.e}</span>
-        <span>{banner.m}</span>
+        <span>{s.phase === "learning" && fps === null && camError === null ? "카메라 켜는 중…" : banner.m}</span>
+        {s.lastEvent !== null && (
+          // R4 판정 로그 — 마지막 통과에 대한 결정(출발/정지/타차/디바운스)을 그대로 노출
+          <span className="caption" style={{ display: "block", opacity: 0.85 }}>
+            {s.lastEvent}
+          </span>
+        )}
       </div>
       <div className="timer-wrap">
         <div className="overline">{running ? "현재 랩" : last ? "직전 랩" : "랩타임"}</div>

@@ -54,11 +54,17 @@ interface LapState {
   lastLapMs: number | null;
   elapsedMs: number;
   startedAt: number;
+  /** R4 판정 로그(현장 진단) — 마지막 통과 이벤트에 대한 상태머신의 결정 1줄 */
+  lastEvent: string | null;
   _learnTimer: ReturnType<typeof setTimeout> | null;
 
   hydrate: () => Promise<void>;
   startManual: () => void;
   startDetect: () => void;
+  /** R4: 카메라 스트림 준비 완료 신호 — 이때부터 배경 학습(LEARN_MS)을 시작한다.
+   *  종전에는 슬라이드 즉시 타이머가 돌아, 카메라가 늦게 켜지는 기기에서 스트림도 없는데
+   *  armed로 넘어가고 첫 프레임(=배경 시드)이 주행 중인 차 위에서 찍히는 레이스가 있었다. */
+  cameraReady: () => void;
   cancel: () => void;
   stopByButton: () => void;
   handlePass: (event: PassEvent) => void;
@@ -81,9 +87,19 @@ export const useLapStore = create<LapState>((set, get) => {
       lapStart.engineMs != null && stopEngineMs != null
         ? stopEngineMs - lapStart.engineMs
         : performance.now() - lapStart.perfMs;
-    if (dur < MIN_LAP_MS) return; // 디바운스
+    if (dur < MIN_LAP_MS) {
+      set({ lastEvent: `통과 ${Math.round(dur)}ms — 랩 하한(${MIN_LAP_MS}ms) 미만 무시` });
+      return; // 디바운스
+    }
     const nextLaps = [...laps, { n: laps.length + 1, durationMs: dur, suspect }];
-    set({ laps: nextLaps, phase: "idle", lapStart: null, lastLapMs: dur, elapsedMs: dur });
+    set({
+      laps: nextLaps,
+      phase: "idle",
+      lapStart: null,
+      lastLapMs: dur,
+      elapsedMs: dur,
+      lastEvent: `정지 — 랩 ${(dur / 1000).toFixed(2)}s${suspect ? " (의심)" : ""}`,
+    });
     persist({ startedAt, laps: nextLaps, otherPass });
   }
 
@@ -98,6 +114,7 @@ export const useLapStore = create<LapState>((set, get) => {
     lastLapMs: null,
     elapsedMs: 0,
     startedAt: Date.now(),
+    lastEvent: null,
     _learnTimer: null,
 
     hydrate: async () => {
@@ -112,14 +129,21 @@ export const useLapStore = create<LapState>((set, get) => {
 
     startDetect: () => {
       if (get().phase !== "idle") return;
-      const t = setTimeout(() => {
-        if (get().phase === "learning") set({ phase: "armed", _learnTimer: null });
-      }, LEARN_MS);
       // R3: 세션마다 타깃 재등록 — 카메라가 세션 단위로 새로 켜져(R2) 조명·노출이 달라지므로,
       // 이전 세션의 낡은 시그니처와 매칭을 강요하면 첫 통과가 "타차"로 거부돼 시작 자체가 안
       // 된다(실기기 증상). 세션 간 정체성은 "사용자가 자기 차를 먼저 출발시킨다"는 운영 규칙이
       // 담당하고, 시그니처 매칭은 **주행 중 타차 통과 무시**(1-vs-rest 본연의 역할)에 쓴다.
-      set({ startMode: "detect", phase: "learning", _learnTimer: t, targetSig: null });
+      // R4: LEARN 타이머는 여기서 돌리지 않는다 — cameraReady()가 스트림 확인 후 시작.
+      set({ startMode: "detect", phase: "learning", _learnTimer: null, targetSig: null, lastEvent: null });
+    },
+
+    cameraReady: () => {
+      const { phase, _learnTimer } = get();
+      if (phase !== "learning" || _learnTimer !== null) return;
+      const t = setTimeout(() => {
+        if (get().phase === "learning") set({ phase: "armed", _learnTimer: null });
+      }, LEARN_MS);
+      set({ _learnTimer: t });
     },
 
     cancel: () => {
@@ -140,12 +164,15 @@ export const useLapStore = create<LapState>((set, get) => {
 
       if (phase === "armed") {
         if (targetSig === null) {
-          set({ targetSig: event.signature ?? [] }); // 최초 통과 = 자동 타깃 등록 (세션마다, R3)
+          // 최초 통과 = 자동 타깃 등록 (세션마다, R3)
+          set({ targetSig: event.signature ?? [], lastEvent: "출발 — 타깃 등록" });
         } else if (event.signature) {
-          if (signatureDistance(event.signature, targetSig) > sigThresholds().border) {
-            set({ otherPass: otherPass + 1 }); // 다른 차 — 출발 아님
+          const d = signatureDistance(event.signature, targetSig);
+          if (d > sigThresholds().border) {
+            set({ otherPass: otherPass + 1, lastEvent: `대기 중 타차 d=${d.toFixed(2)} — 출발 아님` });
             return;
           }
+          set({ lastEvent: `출발 d=${d.toFixed(2)}` });
         }
         set({ phase: "running", lapStart: { perfMs: performance.now(), engineMs: event.tMs }, elapsedMs: 0 });
         return;
@@ -156,7 +183,7 @@ export const useLapStore = create<LapState>((set, get) => {
         const { match, border } = sigThresholds();
         const d = event.signature && targetSig ? signatureDistance(event.signature, targetSig) : 0;
         if (d > border) {
-          set({ otherPass: otherPass + 1 }); // 타차 통과 무시
+          set({ otherPass: otherPass + 1, lastEvent: `타차 통과 d=${d.toFixed(2)} 무시 (임계 ${border})` });
           return;
         }
         recordLap(event.tMs, d > match); // 경계면 의심 랩

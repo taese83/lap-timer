@@ -15,6 +15,7 @@ let engine: LaptimeEngine | null = null;
 const STATS_INTERVAL_MS = 250;
 let statsPeak = 0;
 let statsLastSentMs = -Infinity;
+let framesTotal = 0;
 
 scope.onmessage = (event) => {
   const msg = event.data;
@@ -23,16 +24,23 @@ scope.onmessage = (event) => {
       engine = createLaptimeEngine(msg.options);
       statsPeak = 0;
       statsLastSentMs = -Infinity;
+      framesTotal = 0;
       scope.postMessage({ type: "ready" });
       break;
     case "frame":
       if (engine) {
+        framesTotal += 1;
         for (const ev of engine.process(msg.frame)) scope.postMessage({ type: "pass", event: ev });
         statsPeak = Math.max(statsPeak, engine.lastChangeRatio);
         if (msg.frame.tMs - statsLastSentMs >= STATS_INTERVAL_MS) {
           scope.postMessage({
             type: "stats",
-            stats: { ratio: engine.lastChangeRatio, peak: statsPeak, threshold: engine.options.occlusionThreshold },
+            stats: {
+              ratio: engine.lastChangeRatio,
+              peak: statsPeak,
+              threshold: engine.options.occlusionThreshold,
+              frames: framesTotal,
+            },
           });
           statsPeak = 0;
           statsLastSentMs = msg.frame.tMs;

@@ -61,6 +61,8 @@ export interface EngineStats {
   peak: number;
   /** 현재 적용 중인 가림 임계(오버라이드 반영) — UI가 도달 여부를 색으로 표시 */
   threshold: number;
+  /** configure 이후 처리한 총 프레임 수 — 0에 머물면 카메라→워커 파이프가 죽은 것(R4 진단) */
+  frames: number;
 }
 
 export interface EngineFrame {

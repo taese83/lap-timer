@@ -5,6 +5,7 @@ import { startCamera, type CameraHandle } from "../model/camera";
 import { SlideToStart } from "./SlideToStart";
 import { fmt, signatureColor } from "./format";
 import type { LapPhase } from "@/entities/session/model/types";
+import type { EngineStats } from "@/shared/lib/laptime-engine/protocol";
 
 function bannerFor(phase: LapPhase, laps: number): { e: string; m: string; v: "info" | "warning" } {
   switch (phase) {
@@ -25,22 +26,47 @@ export function MeasureScreen() {
   const s = useLapStore();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [fps, setFps] = useState<number | null>(null);
+  const [stats, setStats] = useState<EngineStats | null>(null);
+  const handleRef = useRef<CameraHandle | null>(null);
 
+  // R2(사용자): 카메라는 **밀어서 시작한 감지 세션 동안만** 켠다 — 세션마다 워커·엔진·배경이
+  // 새로 만들어져 stale 배경 고착(실기기 감지 전멸 원인)이 구조적으로 사라지고, 대기 중 배터리·
+  // 권한 노출도 없다. 수동(탭) 계측은 카메라 없이 버튼 정지 전용.
+  const detectSession = s.startMode === "detect" && s.phase !== "idle";
   useEffect(() => {
-    let handle: CameraHandle | null = null;
+    if (!detectSession) return;
     const v = videoRef.current;
-    if (v) {
-      startCamera(v, (e) => useLapStore.getState().handlePass(e))
-        .then((h) => {
-          handle = h;
-          setFps(h.fps);
-        })
-        .catch(() => {
-          /* 카메라 불가(권한/비-secure) — 수동 계측은 여전히 가능 */
-        });
-    }
-    return () => handle?.stop();
-  }, []);
+    if (!v) return;
+    let cancelled = false;
+    startCamera(
+      v,
+      (e) => useLapStore.getState().handlePass(e),
+      (st) => setStats(st),
+    )
+      .then((h) => {
+        if (cancelled) {
+          h.stop();
+          return;
+        }
+        handleRef.current = h;
+        setFps(h.fps);
+      })
+      .catch(() => {
+        /* 카메라 불가(권한/비-secure) — 버튼 정지는 여전히 가능 */
+      });
+    return () => {
+      cancelled = true;
+      handleRef.current?.stop();
+      handleRef.current = null;
+      setFps(null);
+      setStats(null);
+    };
+  }, [detectSession]);
+
+  // R2: learning 진입 시 엔진 배경 재시드 — 카메라가 이미 켜져 있는 경로의 안전망(없으면 no-op)
+  useEffect(() => {
+    if (s.phase === "learning") handleRef.current?.resetEngine();
+  }, [s.phase]);
 
   useEffect(() => {
     if (s.phase !== "running") return;
@@ -74,10 +100,22 @@ export function MeasureScreen() {
       <div className="preview-strip">
         <video ref={videoRef} className="preview-video" playsInline muted />
         <span className="lens">
-          ◉ 카메라 게이트 (레인 내려봄)
-          {fps !== null && (
-            // 30km/h 인식 보장은 60fps 필요(조사 R1) — 50 미만이면 경고색
-            <span style={fps < 50 ? { color: "var(--warning, #f0b429)" } : undefined}> · {fps}fps</span>
+          {detectSession ? (
+            <>
+              ◉ 카메라 게이트
+              {fps !== null && (
+                // 30km/h 인식 보장은 60fps 필요(조사 R1) — 50 미만이면 경고색
+                <span style={fps < 50 ? { color: "var(--warning, #f0b429)" } : undefined}> · {fps}fps</span>
+              )}
+              {stats !== null && (
+                // R2 진단 미터: 최근 피크 변화율 — 임계 도달 시 라임(감지 가능 배치·조명 증명)
+                <span style={{ color: stats.peak >= stats.threshold ? "var(--lime, #a3e635)" : undefined }}>
+                  {" "}· 피크 {Math.round(stats.peak * 100)}%/{Math.round(stats.threshold * 100)}%
+                </span>
+              )}
+            </>
+          ) : (
+            <>◉ 카메라 — 밀어서 시작하면 켜짐</>
           )}
         </span>
       </div>

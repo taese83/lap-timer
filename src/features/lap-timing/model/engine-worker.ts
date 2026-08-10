@@ -11,21 +11,37 @@ interface WorkerScope {
 const scope = self as unknown as WorkerScope;
 
 let engine: LaptimeEngine | null = null;
+// R2 진단 스탯 — 250ms 간격으로 현재/피크 변화율을 UI에 흘린다 (배치·조명 임계 도달 확인용)
+const STATS_INTERVAL_MS = 250;
+let statsPeak = 0;
+let statsLastSentMs = -Infinity;
 
 scope.onmessage = (event) => {
   const msg = event.data;
   switch (msg.type) {
     case "configure":
       engine = createLaptimeEngine(msg.options);
+      statsPeak = 0;
+      statsLastSentMs = -Infinity;
       scope.postMessage({ type: "ready" });
       break;
     case "frame":
       if (engine) {
         for (const ev of engine.process(msg.frame)) scope.postMessage({ type: "pass", event: ev });
+        statsPeak = Math.max(statsPeak, engine.lastChangeRatio);
+        if (msg.frame.tMs - statsLastSentMs >= STATS_INTERVAL_MS) {
+          scope.postMessage({
+            type: "stats",
+            stats: { ratio: engine.lastChangeRatio, peak: statsPeak, threshold: engine.options.occlusionThreshold },
+          });
+          statsPeak = 0;
+          statsLastSentMs = msg.frame.tMs;
+        }
       }
       break;
     case "reset":
       engine?.reset();
+      statsPeak = 0;
       break;
   }
 };

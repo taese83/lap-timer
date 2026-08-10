@@ -1,6 +1,6 @@
 // 카메라 캡처 → ROI 다운스케일 → Worker 엔진. 타임스탬프는 rVFC mediaTime(정본, 미지원 시 rAF).
 // getUserMedia는 secure context(HTTPS/localhost) + 권한 필요 — 실패는 호출자가 처리.
-import type { EngineRequest, EngineResponse, PassEvent } from "@/shared/lib/laptime-engine/protocol";
+import type { EngineOptions, EngineRequest, EngineResponse, EngineStats, PassEvent } from "@/shared/lib/laptime-engine/protocol";
 
 const ROI_W = 64;
 const ROI_H = 48;
@@ -9,16 +9,52 @@ export interface CameraHandle {
   stop: () => void;
   /** 실측 캡처 fps(track.getSettings) — 미보고 기기는 null. 30km/h 인식 보장은 60fps 필요(조사 R1). */
   fps: number | null;
+  /** R2: 엔진 배경·burst 상태 초기화 — 재무장(learning 진입) 시 호출해 배치된 장면으로 재시드 */
+  resetEngine: () => void;
+}
+
+/**
+ * R2 현장 튜닝 오버라이드(tamiya R53 방식) — 배포 없이 URL 쿼리로 엔진 임계를 조정한다.
+ * 예: ?occlusion=0.4&vibration=0.15&delta=40&minGap=500&maxBurst=3000
+ * 제품 기본 동작은 쿼리 없는 URL에서 불변. 진단 미터가 threshold를 함께 표시한다.
+ */
+function tuningFromQuery(): Partial<EngineOptions> {
+  const overrides: Partial<EngineOptions> = {};
+  const search = globalThis.location?.search;
+  if (typeof search !== "string" || search === "") return overrides;
+  const params = new URLSearchParams(search);
+  const num = (key: string): number | null => {
+    const raw = params.get(key);
+    if (raw === null) return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+  };
+  const occlusion = num("occlusion");
+  if (occlusion !== null) overrides.occlusionThreshold = occlusion;
+  const vibration = num("vibration");
+  if (vibration !== null) overrides.vibrationThreshold = vibration;
+  const delta = num("delta");
+  if (delta !== null) overrides.pixelDeltaThreshold = delta;
+  const minGap = num("minGap");
+  if (minGap !== null) overrides.minGapMs = minGap;
+  const maxBurst = num("maxBurst");
+  if (maxBurst !== null) overrides.maxBurstMs = maxBurst;
+  return overrides;
 }
 
 type RVFCVideo = HTMLVideoElement & {
   requestVideoFrameCallback?: (cb: (now: number, meta: { mediaTime: number }) => void) => number;
 };
 
-export async function startCamera(video: HTMLVideoElement, onPass: (e: PassEvent) => void): Promise<CameraHandle> {
+export async function startCamera(
+  video: HTMLVideoElement,
+  onPass: (e: PassEvent) => void,
+  onStats?: (s: EngineStats) => void,
+): Promise<CameraHandle> {
   const worker = new Worker(new URL("./engine-worker.ts", import.meta.url), { type: "module" });
   worker.onmessage = (e: MessageEvent<EngineResponse>) => {
     if (e.data.type === "pass") onPass(e.data.event);
+    else if (e.data.type === "stats") onStats?.(e.data.stats);
   };
 
   const stream = await navigator.mediaDevices.getUserMedia({
@@ -35,7 +71,7 @@ export async function startCamera(video: HTMLVideoElement, onPass: (e: PassEvent
   const reported = stream.getVideoTracks()[0]?.getSettings().frameRate;
   const fps = typeof reported === "number" && Number.isFinite(reported) ? Math.round(reported) : null;
 
-  worker.postMessage({ type: "configure", options: { width: ROI_W, height: ROI_H } } satisfies EngineRequest);
+  worker.postMessage({ type: "configure", options: { width: ROI_W, height: ROI_H, ...tuningFromQuery() } } satisfies EngineRequest);
 
   const canvas = new OffscreenCanvas(ROI_W, ROI_H);
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -72,6 +108,9 @@ export async function startCamera(video: HTMLVideoElement, onPass: (e: PassEvent
 
   return {
     fps,
+    resetEngine: () => {
+      if (!stopped) worker.postMessage({ type: "reset" } satisfies EngineRequest);
+    },
     stop: () => {
       stopped = true;
       worker.postMessage({ type: "reset" } satisfies EngineRequest);

@@ -17,6 +17,12 @@ export interface EngineOptions {
   bgLearnRate: number;
   /** 통과 이벤트 최소 간격(ms) — 이중 트리거 디바운스(brief minGap). */
   minGapMs: number;
+  /**
+   * burst 최대 지속(ms) — 초과 시 통과가 아니라 **장면 자체가 바뀐 것**(폰 이동·배경 어긋남)으로
+   * 보고 burst를 폐기하고 배경을 현재 프레임으로 재시드한다(자가 복구). 차 통과는 실속에서
+   * 수십 ms, 손 테스트도 1초 미만이므로 2초는 안전 여유가 크다.
+   */
+  maxBurstMs: number;
   /** 색 시그니처 hue 히스토그램 bin 수(1-vs-rest 매칭용). */
   hueBins: number;
 }
@@ -33,13 +39,29 @@ export const ACHRO_BINS = 4;
 export const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
   width: 64,
   height: 48,
-  occlusionThreshold: 0.4,
+  // R2 실기기(2026-08-10): 실속(30km/h급) 통과가 저속 등록과 달리 전혀 감지되지 않음(N=0).
+  // 원인은 모션 블러 — 노출 시간 동안 차가 수 cm 이동해 픽셀마다 차·트랙이 섞이며 luma 대비가
+  // 절반 이하로 희석된다. 저속 계약(가림 40%/픽셀 40)을 실속에 맞춰 30%/28로 완화한다.
+  // 오탐 방어는 vibrationThreshold(15%)·minGap·1-vs-rest 매칭이 그대로 담당. 현장 재조정은
+  // URL 오버라이드(camera.ts: ?occlusion=0.4&delta=40 등)로 배포 없이 가능.
+  occlusionThreshold: 0.3,
   vibrationThreshold: 0.15,
-  pixelDeltaThreshold: 40,
+  pixelDeltaThreshold: 28,
   bgLearnRate: 0.05,
   minGapMs: 300,
+  maxBurstMs: 2000,
   hueBins: 24,
 };
+
+/** Worker → UI 진단 스탯 (throttled) — 배치·조명이 감지 임계를 넘는지 현장에서 확인용. */
+export interface EngineStats {
+  /** 최신 프레임 변화율(0~1) */
+  ratio: number;
+  /** 직전 스탯 이후 최대 변화율(0~1) — 통과 순간 포착용 */
+  peak: number;
+  /** 현재 적용 중인 가림 임계(오버라이드 반영) — UI가 도달 여부를 색으로 표시 */
+  threshold: number;
+}
 
 export interface EngineFrame {
   /** 프레임 타임스탬프 — 실제 앱에선 rVFC mediaTime(정본). */
@@ -70,4 +92,5 @@ export type EngineRequest =
 export type EngineResponse =
   | { type: "ready" }
   | { type: "pass"; event: PassEvent }
+  | { type: "stats"; stats: EngineStats }
   | { type: "error"; message: string };

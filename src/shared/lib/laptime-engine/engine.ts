@@ -19,6 +19,8 @@ export interface LaptimeEngine {
   process(frame: EngineFrame): PassEvent[];
   /** 배경 모델·진행 중 burst·디바운스 상태를 폐기(측정 재시작·재무장 시). */
   reset(): void;
+  /** 최신 프레임 변화율(0~1) — 진단 미터용(배경 시드 프레임은 0). */
+  readonly lastChangeRatio: number;
   readonly options: EngineOptions;
 }
 
@@ -28,11 +30,16 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
   let bg: Float32Array | null = null;
   let burst: Burst | null = null;
   let lastPassMs = -Infinity;
+  let lastRatio = 0;
+  /** R2: 변화율이 vibration 이상(=배경 학습 차단 상태)로 연속된 시작 시각 — 자가 복구 판정용 */
+  let elevatedSinceMs: number | null = null;
 
   function reset(): void {
     bg = null;
     burst = null;
     lastPassMs = -Infinity;
+    lastRatio = 0;
+    elevatedSinceMs = null;
   }
 
   function changeRatio(luma: Uint8Array, background: Float32Array): number {
@@ -85,9 +92,11 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
     if (luma.length !== n) throw new Error(`frame luma length ${luma.length} != ${n}`);
     if (bg === null) {
       bg = Float32Array.from(luma); // 첫 프레임 = 배경 시드
+      lastRatio = 0;
       return [];
     }
     const ratio = changeRatio(luma, bg);
+    lastRatio = ratio;
     const events: PassEvent[] = [];
 
     if (ratio >= options.occlusionThreshold) {
@@ -100,6 +109,15 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
       burst.sumW += ratio;
       burst.peak = Math.max(burst.peak, ratio);
       accumulateSignature(frame, bg, burst);
+      // R2 자가 복구(실기기: 정지 후 차·손이 레인 위에 머물면 burst가 영구 미종결 → 이후 감지
+      // 전멸): 통과라기엔 너무 긴 가림은 장면 전환(폰 이동·주차된 차)이다 — burst 폐기 +
+      // 배경을 현재 프레임으로 재시드해 잠금을 푼다. 통과 이벤트는 내지 않는다(차 통과 아님).
+      if (tMs - burst.startMs > options.maxBurstMs) {
+        burst = null;
+        bg = Float32Array.from(luma);
+        lastRatio = 0;
+        elevatedSinceMs = null;
+      }
       return events;
     }
 
@@ -117,6 +135,17 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
     if (ratio < options.vibrationThreshold) {
       const a = options.bgLearnRate;
       for (let i = 0; i < n; i++) bg[i] = bg[i]! + a * (luma[i]! - bg[i]!);
+      elevatedSinceMs = null;
+    } else {
+      // R2 자가 복구 2(실기기: 통과 직후 자동노출 출렁임 등으로 변화율이 vibration~occlusion
+      // 사이에 갇히면 배경 학습이 영구 차단 → 이후 감지 전멸): 이 중간 구간이 maxBurstMs 이상
+      // 이어지면 순간 사건이 아니라 장면·노출이 바뀐 것이다 — 배경을 현재 프레임으로 재시드.
+      if (elevatedSinceMs === null) elevatedSinceMs = tMs;
+      else if (tMs - elevatedSinceMs > options.maxBurstMs) {
+        bg = Float32Array.from(luma);
+        lastRatio = 0;
+        elevatedSinceMs = null;
+      }
     }
     return events;
   }
@@ -124,6 +153,9 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
   return {
     process,
     reset,
+    get lastChangeRatio() {
+      return lastRatio;
+    },
     get options() {
       return options;
     },

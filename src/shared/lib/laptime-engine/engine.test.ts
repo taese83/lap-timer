@@ -144,6 +144,42 @@ describe("laptime-engine", () => {
     expect(signatureDistance(black1, green)).toBeGreaterThan(1.5);
   });
 
+  it("R2 자가복구 ①: 장기 가림(주차된 차·손)은 통과가 아니라 새 배경 — 이후 감지 재개", () => {
+    const e = mk();
+    const uniform = (tMs: number, value: number): EngineFrame => ({
+      tMs,
+      luma: new Uint8Array(N).fill(value),
+      rgb: new Uint8Array(N * 3).fill(value),
+    });
+    e.process(uniform(0, 100)); // 배경 시드
+    const events: ReturnType<typeof e.process> = [];
+    // 차가 레인 위에 주차: 2초 넘게 전면 가림 — 통과 이벤트가 나오면 안 된다
+    for (let t = 16; t <= 2400; t += 100) events.push(...e.process(uniform(t, 200)));
+    expect(events).toHaveLength(0);
+    // 타임아웃 후 배경이 200으로 재시드됨 — 같은 장면은 변화율 0 (잠금 해제 증명)
+    e.process(uniform(2500, 200));
+    expect(e.lastChangeRatio).toBe(0);
+    // 새 통과(어두운 차)가 정상 감지된다
+    const after = [...e.process(uniform(2600, 20)), ...e.process(uniform(2650, 200))];
+    expect(after).toHaveLength(1);
+  });
+
+  it("R2 자가복구 ②: 중간 변화율(진동~가림 사이) 고착 시 배경 재시드 — 학습 차단 탈출", () => {
+    const e = mk();
+    const partial = (tMs: number, frac: number): EngineFrame => {
+      const luma = new Uint8Array(N).fill(100);
+      const rgb = new Uint8Array(N * 3).fill(100);
+      for (let i = 0; i < Math.round(N * frac); i++) luma[i] = 200;
+      return { tMs, luma, rgb };
+    };
+    e.process(partial(0, 0)); // 배경 시드 (luma 100)
+    // 노출 출렁임 등으로 25%가 계속 변한 상태(가림 40% 미만·진동 15% 초과) — 종전엔 영구 고착
+    for (let t = 16; t <= 2400; t += 100) e.process(partial(t, 0.25));
+    // 타임아웃 후 현재 장면이 새 배경 — 같은 장면은 변화율 0
+    e.process(partial(2500, 0.25));
+    expect(e.lastChangeRatio).toBe(0);
+  });
+
   it("reset 후 배경 재시드 — 이전 상태 이월 없음", () => {
     const e = mk();
     e.process(frame(0, 0));

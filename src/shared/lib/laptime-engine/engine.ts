@@ -23,6 +23,14 @@ const SOFT_MAX_FRAMES = 5;
 /** R6: soft 전용 burst 승인 최소 연속 프레임 수 — 단발 soft는 잡음일 수 있어 미승인 */
 const SOFT_MIN_FRAMES = 2;
 
+/* R8 시그니처 확장: hue 히스토그램을 **밝기 2평면**(어두운 톤/밝은 톤)으로 나눈다 —
+ * 남색 vs 하늘색처럼 hue가 같고 밝기만 다른 차를 구분(레이아웃: [어두운 hue×N][밝은 hue×N][무채색 4]).
+ * 밝기 기준은 luma가 아니라 **value(max RGB)** — 파랑 계열은 luma가 태생적으로 낮아
+ * luma로는 밝은 파랑도 어두운 평면에 떨어진다. 경계 픽셀은 소프트 배분(ramp)으로 두 평면에
+ * 나눠 담아, 노출 변화로 value가 경계를 넘나들 때 분포가 통째로 널뛰는 것을 막는다. */
+const VALUE_RAMP_LO = 0.38; // 이 이하 = 전량 어두운 평면
+const VALUE_RAMP_HI = 0.63; // 이 이상 = 전량 밝은 평면 (사이는 선형 배분)
+
 export interface LaptimeEngine {
   /** 한 프레임 처리. burst가 끝나 통과가 확정되면 PassEvent 1건을 담아 반환(대개 []). */
   process(frame: EngineFrame): PassEvent[];
@@ -61,7 +69,7 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
       sumT: 0,
       sumW: 0,
       peak: 0,
-      sig: new Float64Array(options.hueBins + ACHRO_BINS),
+      sig: new Float64Array(options.hueBins * 2 + ACHRO_BINS),
       sigWeight: 0,
       softFrames: hardSeen ? 0 : 1,
       hardSeen,
@@ -97,27 +105,46 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
       const r = rgb[i * 3]! / 255;
       const g = rgb[i * 3 + 1]! / 255;
       const b = rgb[i * 3 + 2]! / 255;
-      const { h, s } = rgbToHueSat(r, g, b);
+      const { h, s, v } = rgbToHueSat(r, g, b);
       if (s < 0.12) {
         // 무채색(검정/흰/은색): hue 대신 배경 대비 밝기 bin — protocol.ACHRO_BINS 주석 참조.
         // 가중치는 대비 크기(|Δ|/255) — 같은 차는 통과마다 비슷한 대비를 내므로 자기 일관적.
         const idx = delta < 0 ? (delta < -strongDelta ? 0 : 1) : (delta > strongDelta ? 3 : 2);
         const w = Math.abs(delta) / 255;
-        into.sig[options.hueBins + idx]! += w;
+        into.sig[options.hueBins * 2 + idx]! += w;
         into.sigWeight += w;
         continue;
       }
       const bin = Math.min(options.hueBins - 1, Math.floor((h / 360) * options.hueBins));
-      into.sig[bin]! += s; // 채도 가중
+      // R8: value ramp로 어두운/밝은 평면에 소프트 배분 (경계 널뛰기 방지 — 파일 상단 주석)
+      const bright = Math.min(1, Math.max(0, (v - VALUE_RAMP_LO) / (VALUE_RAMP_HI - VALUE_RAMP_LO)));
+      into.sig[bin]! += s * (1 - bright); // 어두운 톤 평면
+      into.sig[options.hueBins + bin]! += s * bright; // 밝은 톤 평면
       into.sigWeight += s;
     }
   }
 
   function finalizeSignature(b: Burst): number[] | null {
     if (b.sigWeight <= 0) return null;
-    const len = options.hueBins + ACHRO_BINS;
+    const planeBins = options.hueBins;
+    const len = planeBins * 2 + ACHRO_BINS;
     const out = new Array<number>(len);
-    for (let i = 0; i < len; i++) out[i] = b.sig[i]! / b.sigWeight;
+    // R8 원형 hue 스무딩 [0.25, 0.5, 0.25] — 자동 화이트밸런스가 색조를 살짝 밀면 경계 픽셀이
+    // 옆 bin으로 이동해 같은 차의 L1 거리가 튄다(인접 bin 완전 분리 시 2.0). 평면별로 번지면
+    // 인접 bin 이동의 거리 비용이 절반으로 줄어 드리프트에 둔감해진다. 커널 합=1이라 질량 보존.
+    for (let plane = 0; plane < 2; plane++) {
+      const base = plane * planeBins;
+      for (let i = 0; i < planeBins; i++) {
+        const prev = b.sig[base + ((i + planeBins - 1) % planeBins)]!;
+        const cur = b.sig[base + i]!;
+        const next = b.sig[base + ((i + 1) % planeBins)]!;
+        out[base + i] = (0.25 * prev + 0.5 * cur + 0.25 * next) / b.sigWeight;
+      }
+    }
+    // 무채색 bin은 순서형(최암→최명)이라 원형 아님 — 스무딩 없이 그대로
+    for (let k = 0; k < ACHRO_BINS; k++) {
+      out[planeBins * 2 + k] = b.sig[planeBins * 2 + k]! / b.sigWeight;
+    }
     return out;
   }
 
@@ -228,7 +255,7 @@ export function signatureDistance(a: number[], b: number[]): number {
   return d;
 }
 
-function rgbToHueSat(r: number, g: number, b: number): { h: number; s: number } {
+function rgbToHueSat(r: number, g: number, b: number): { h: number; s: number; v: number } {
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
   const delta = max - min;
@@ -241,5 +268,5 @@ function rgbToHueSat(r: number, g: number, b: number): { h: number; s: number } 
     if (h < 0) h += 360;
   }
   const s = max <= 1e-6 ? 0 : delta / max;
-  return { h, s };
+  return { h, s, v: max };
 }

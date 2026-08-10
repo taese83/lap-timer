@@ -56,9 +56,9 @@ describe("laptime-engine", () => {
     expect(ev[0]!.peakChangeRatio).toBeCloseTo(1, 5);
     const sig = ev[0]!.signature!;
     expect(sig).not.toBeNull();
-    // hue 120 → bin floor(120/360*12)=4 이 최대
+    // hue 120 → bin floor(120/360*12)=4, value 0.8 → 밝은 톤 평면(R8) → 12+4=16 이 최대
     const peakBin = sig.indexOf(Math.max(...sig));
-    expect(peakBin).toBe(4);
+    expect(peakBin).toBe(16);
   });
 
   it("진동(작은 변화율)은 통과가 아니다 — 오탐 0", () => {
@@ -115,10 +115,10 @@ describe("laptime-engine", () => {
     const out = e.process(frame(32, 0));
     const sig = out[0]!.signature;
     expect(sig).not.toBeNull();
-    expect(sig!).toHaveLength(12 + ACHRO_BINS);
-    // Δ = 10−100 = −90 < −2T(−80) → 무채색 최암 bin(hueBins+0)에 전량
+    expect(sig!).toHaveLength(12 * 2 + ACHRO_BINS); // R8: hue 2평면 + 무채색
+    // Δ = 10−100 = −90 < −2T(−80) → 무채색 최암 bin(hueBins*2+0)에 전량
     const peakBin = sig!.indexOf(Math.max(...sig!));
-    expect(peakBin).toBe(12);
+    expect(peakBin).toBe(24);
   });
 
   it("무채색 재식별: 검정↔검정 근접, 검정↔흰색·검정↔유채색은 원거리", () => {
@@ -180,6 +180,49 @@ describe("laptime-engine", () => {
     // 타임아웃 후 현재 장면이 새 배경 — 같은 장면은 변화율 0
     e.process(partial(2900, 0.25));
     expect(e.lastChangeRatio).toBe(0);
+  });
+
+  it("R8: 같은 hue·다른 밝기(남색 vs 하늘색)가 다른 평면으로 갈라진다", () => {
+    function sigOfHsv(h: number, s: number, v: number): number[] {
+      const e = mk();
+      // 배경 180: 하늘색(luma ≈91)도 전경으로 잡히도록 밝은 배경 사용 — luma 차분 특성상
+      // 배경과 luma가 비슷한 색은 전경에서 빠진다(감지 한계, R8 분석 §5에 기록됨)
+      const uniform = (tMs: number, lumaV: number, r: number, g: number, b: number) => {
+        const luma = new Uint8Array(N).fill(lumaV);
+        const rgb = new Uint8Array(N * 3);
+        for (let i = 0; i < N; i++) {
+          rgb[i * 3] = r;
+          rgb[i * 3 + 1] = g;
+          rgb[i * 3 + 2] = b;
+        }
+        return { tMs, luma, rgb };
+      };
+      e.process(uniform(0, 180, 180, 180, 180));
+      const [r, g, b] = hsvToRgb(h, s, v);
+      const lumaV = Math.max(1, (r * 77 + g * 150 + b * 29) >> 8);
+      e.process(uniform(16, lumaV, r, g, b));
+      return e.process(uniform(32, 180, 180, 180, 180))[0]!.signature!;
+    }
+    const navy = sigOfHsv(220, 0.9, 0.3); // value 0.3 → 어두운 평면
+    const sky = sigOfHsv(220, 0.9, 0.95); // value 0.95 → 밝은 평면
+    const navy2 = sigOfHsv(220, 0.9, 0.28);
+    expect(signatureDistance(navy, navy2)).toBeLessThan(0.3); // 같은 남색끼리는 근접
+    expect(signatureDistance(navy, sky)).toBeGreaterThan(1.5); // 남색↔하늘색 원거리 (종전 ≈0)
+  });
+
+  it("R8 원형 스무딩: 인접 bin으로 밀린 hue(AWB 드리프트)의 거리가 완화된다", () => {
+    function sigOfHue(hue: number): number[] {
+      const e = mk();
+      e.process(frame(0, 0));
+      e.process(frame(16, 1, hue));
+      return e.process(frame(32, 0))[0]!.signature!;
+    }
+    // hueBins 12 → bin 폭 30°. 118°(bin 3)와 132°(bin 4)는 인접 bin — 스무딩 없으면 L1=2.0(완전 분리)
+    const a = sigOfHue(118);
+    const b = sigOfHue(132);
+    const d = signatureDistance(a, b);
+    expect(d).toBeGreaterThan(0);
+    expect(d).toBeLessThan(1.2); // 스무딩으로 겹침 발생 — border(1.5) 안쪽 = 같은 차 유지
   });
 
   it("R6 soft 과도: 연속 2프레임 20%대(임계 미달)도 통과로 인정", () => {

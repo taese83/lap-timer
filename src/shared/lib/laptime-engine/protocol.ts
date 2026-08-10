@@ -90,8 +90,9 @@ export interface PassEvent {
   peakChangeRatio: number;
   /** burst 지속(ms) — 병합 감지(brief R2: 단독 20~40ms vs 병합 60ms+)에 소비층이 사용. */
   durationMs: number;
-  /** 정규화 히스토그램(길이 hueBins+ACHRO_BINS, 합=1) 또는 rgb 미제공 시 null.
-   *  앞 hueBins개 = 유채색 hue(채도 가중), 뒤 ACHRO_BINS개 = 무채색 밝기-대비 bin. */
+  /** 정규화 히스토그램(길이 hueBins×2+ACHRO_BINS, 합=1) 또는 rgb 미제공 시 null.
+   *  R8 레이아웃: [어두운 톤 hue×N][밝은 톤 hue×N][무채색 4] — 유채색은 value ramp로 두 평면에
+   *  소프트 배분(채도 가중), 평면별 원형 스무딩 적용. 무채색은 배경 대비 밝기 bin. */
   signature: number[] | null;
 }
 

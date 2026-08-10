@@ -52,15 +52,35 @@ describe("lap store 상태머신", () => {
     expect(Math.round(S().laps[0]!.durationMs)).toBe(3000);
   });
 
-  it("경계 색 매칭은 의심 랩", async () => {
+  it("경계 색 매칭은 즉시 멈추지 않고(R10 유예) 만료 후 의심 랩으로 기록", async () => {
     S().startDetect();
     S().cameraReady();
     await wait(1300);
     S().handlePass(pass(1000, green));
-    const border = Array.from({ length: 12 }, (_, i) => (i === 4 ? 0.6 : i === 5 ? 0.4 : 0)); // green과 L1=0.8 ∈(0.7,1.0]
+    const border = Array.from({ length: 12 }, (_, i) => (i === 4 ? 0.6 : i === 5 ? 0.4 : 0)); // green과 L1=0.8 ∈(0.7,1.5]
     S().handlePass(pass(3000, border));
+    expect(S().phase).toBe("running"); // R10: 의심은 즉시 정지 아님 — 확정 대기
+    expect(S().laps).toHaveLength(0);
+    await wait(2200); // 유예(2s) 만료
     expect(S().laps).toHaveLength(1);
     expect(S().laps[0]!.suspect).toBe(true);
+    expect(Math.round(S().laps[0]!.durationMs)).toBe(2000); // 의심 통과의 원래 시각(3000) 기준
+  });
+
+  it("R10: 유예 중 확정 매치가 오면 그것으로 정지 — 의심은 타차였던 것", async () => {
+    S().startDetect();
+    S().cameraReady();
+    await wait(1300);
+    S().handlePass(pass(1000, green)); // 출발
+    const border = Array.from({ length: 12 }, (_, i) => (i === 4 ? 0.6 : i === 5 ? 0.4 : 0));
+    S().handlePass(pass(3000, border)); // 비슷한 타차 — 의심, 유예 시작
+    expect(S().phase).toBe("running");
+    S().handlePass(pass(3500, green)); // 내 차 확정 매치 — 즉시 정지
+    expect(S().laps).toHaveLength(1);
+    expect(S().laps[0]!.suspect).toBe(false);
+    expect(Math.round(S().laps[0]!.durationMs)).toBe(2500); // 확정 통과 시각 기준
+    await wait(2200); // 남은 유예 타이머가 이중 기록을 만들지 않는다
+    expect(S().laps).toHaveLength(1);
   });
 
   it("R3: 새 감지 세션은 타깃을 재등록한다 — 이전 세션 시그니처가 시작을 막지 않음", async () => {

@@ -41,10 +41,8 @@ html.native-cam, html.native-cam body, html.native-cam .phone { background: tran
 .chip-wrap { display: flex; align-items: center; gap: var(--s2); min-height: 48px; }
 /* R13: 시그니처 스탬프 버튼(탭=재무장) — 버튼 크롬 제거, 스탬프 자체가 UI */
 .stamp-btn { background: none; border: 0; padding: var(--s1); cursor: pointer; line-height: 0; }
-.eq-bar { opacity: 0; animation: eq-grow 0.45s ease-out forwards; transform-box: fill-box; }
-.eq-up { transform-origin: 50% 100%; }
-.eq-down { transform-origin: 50% 0%; }
-@keyframes eq-grow { from { opacity: 0; transform: scaleY(0.1); } to { opacity: 1; transform: scaleY(1); } }
+.stamp-cell { opacity: 0; animation: stamp-cell-in 0.4s ease-out forwards; }
+@keyframes stamp-cell-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 /* 수치 공통 서체 — 통계·랩 리스트도 계측 서체로 통일 */
 .tnum { font-family: var(--font-numeric); font-feature-settings: "tnum"; }
 .statrow .v { font-weight: 300; }

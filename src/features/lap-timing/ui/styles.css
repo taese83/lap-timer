@@ -52,9 +52,11 @@ html.native-cam, html.native-cam body, html.native-cam .phone { background: tran
 .stat .v { font-size: var(--font-h2); font-weight: 600; }
 
 .bottom-cta { padding: var(--s4); }
-/* R12: 기록 화면 전용 — 랩 리스트가 길어 페이지가 스크롤돼도 초기화 버튼은 하단 고정.
-   R7의 `.phone > *:not(...)` position:relative(특이도 0-3-0)를 이기도록 동급 특이도+후행 선언 */
-.phone > .bottom-cta.pinned { position: sticky; bottom: 0; z-index: 2; background: var(--color-bg-app); }
+/* R14(R12 대체): 기록 화면 = 고정 레이아웃 — 화면 자체는 스크롤하지 않고(뷰포트 높이 고정)
+   랩 리스트만 내부 스크롤한다. 헤더·통계·초기화 버튼은 항상 제자리. */
+.phone.fixed-height { height: 100dvh; max-height: 100dvh; }
+.phone.fixed-height .laplist { flex: 1; min-height: 0; overflow-y: auto; }
+.phone > .bottom-cta.pinned { background: var(--color-bg-app); }
 .btn { min-height: var(--target-std); border-radius: var(--r-md); font-size: var(--font-body); font-weight: 600; padding: 0 var(--s4); display: inline-flex; align-items: center; justify-content: center; gap: var(--s2); border: none; background: var(--color-bg-elevated); color: var(--color-text-primary); }
 .btn:active { transform: scale(0.98); }
 .btn-primary { min-height: var(--target-cta); width: 100%; border-radius: var(--r-lg); background: var(--color-primary-solid); color: var(--color-primary-text-on-solid); font-size: var(--font-h3); font-weight: 700; }

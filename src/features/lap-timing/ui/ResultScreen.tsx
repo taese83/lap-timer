@@ -74,7 +74,6 @@ export function ResultScreen() {
       <p className="caption" style={{ padding: "var(--s3) var(--s4)" }}>
         다른 차 통과 {s.otherPass}회 무시됨 · 타깃 색으로 내 차만 계측
       </p>
-      <div className="grow" />
       {/* R12: 리스트가 길어도 초기화는 하단 고정 (pinned = sticky bottom) */}
       <div className="bottom-cta pinned">
         <button className="btn btn-danger" style={{ width: "100%" }} onClick={onReset}>

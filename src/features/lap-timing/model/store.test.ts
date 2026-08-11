@@ -197,6 +197,18 @@ describe("lap store 상태머신", () => {
     expect(S().laps).toHaveLength(0); // 감지 모드 하한 유지 — 기록 없음(취소 시맨틱)
   });
 
+  it("R14: 수동 시작은 이전 감지 세션의 타깃 시그니처를 제거한다", async () => {
+    S().startDetect();
+    S().cameraReady();
+    await wait(1300);
+    S().handlePass(pass(1000, green)); // 타깃 등록
+    S().handlePass(pass(3000, green)); // 랩 종료
+    expect(S().targetSig).not.toBeNull();
+    S().startManual(); // 수동 시작 — 타깃 개념 없음
+    expect(S().targetSig).toBeNull();
+    S().stopByButton();
+  });
+
   it("디바운스: 800ms 미만 랩은 기록 안 함", async () => {
     S().startDetect();
     S().cameraReady();

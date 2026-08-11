@@ -153,7 +153,8 @@ export const useLapStore = create<LapState>((set, get) => {
 
     startManual: () => {
       if (get().phase !== "idle") return;
-      set({ startMode: "manual", phase: "running", lapStart: { perfMs: performance.now(), engineMs: null }, elapsedMs: 0 });
+      // R14: 수동 모드는 타깃 개념이 없다 — 이전 감지 세션의 시그니처(히트맵 스탬프) 제거
+      set({ startMode: "manual", phase: "running", lapStart: { perfMs: performance.now(), engineMs: null }, elapsedMs: 0, targetSig: null });
     },
 
     startDetect: () => {

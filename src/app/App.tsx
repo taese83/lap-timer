@@ -11,5 +11,6 @@ export function App() {
     void hydrate();
   }, [hydrate]);
 
-  return <div className="phone">{view === "result" ? <ResultScreen /> : <MeasureScreen />}</div>;
+  // R14: 기록 화면은 고정 레이아웃(헤더·통계·초기화 고정, 랩 리스트만 내부 스크롤)
+  return <div className={`phone${view === "result" ? " fixed-height" : ""}`}>{view === "result" ? <ResultScreen /> : <MeasureScreen />}</div>;
 }

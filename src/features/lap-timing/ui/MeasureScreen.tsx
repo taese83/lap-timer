@@ -123,6 +123,18 @@ export function MeasureScreen() {
           </button>
         )}
       </header>
+      <div className={`banner ${banner.v}`}>
+        <span className="eyebrow">{banner.e}</span>
+        {(banner.m !== "" || (s.phase === "learning" && fps === null && camError === null)) && (
+          <span>{s.phase === "learning" && fps === null && camError === null ? "카메라 켜는 중…" : banner.m}</span>
+        )}
+        {s.lastEvent !== null && (
+          // R4 판정 로그 — 마지막 통과에 대한 결정(출발/정지/타차/디바운스)을 그대로 노출
+          <span className="caption" style={{ display: "block", opacity: 0.85 }}>
+            {s.lastEvent}
+          </span>
+        )}
+      </div>
       <div className="lens-line">
         {!detectSession ? (
           <>◉ 카메라 — 밀어서 시작하면 켜짐</>
@@ -142,18 +154,6 @@ export function MeasureScreen() {
               </span>
             )}
           </>
-        )}
-      </div>
-      <div className={`banner ${banner.v}`}>
-        <span className="eyebrow">{banner.e}</span>
-        {(banner.m !== "" || (s.phase === "learning" && fps === null && camError === null)) && (
-          <span>{s.phase === "learning" && fps === null && camError === null ? "카메라 켜는 중…" : banner.m}</span>
-        )}
-        {s.lastEvent !== null && (
-          // R4 판정 로그 — 마지막 통과에 대한 결정(출발/정지/타차/디바운스)을 그대로 노출
-          <span className="caption" style={{ display: "block", opacity: 0.85 }}>
-            {s.lastEvent}
-          </span>
         )}
       </div>
       <div className="timer-wrap">

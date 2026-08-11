@@ -13,8 +13,8 @@ import type { EngineStats } from "@/shared/lib/laptime-engine/protocol";
 function bannerFor(phase: LapPhase, laps: number): { e: string; m: string; v: "info" | "warning" } | null {
   switch (phase) {
     case "idle":
-      // R15-b/e(사용자): 대기 안내 문구 제거, 첫 화면(랩 0)은 배너 영역 자체를 제거
-      return laps ? { e: "대기", m: "", v: "info" } : null;
+      // R15-b/e(사용자 정정): 배너는 유지, 안내 문구만 제거 (대기·준비 공통)
+      return laps ? { e: "대기", m: "", v: "info" } : { e: "준비", m: "", v: "info" };
     case "learning":
       return { e: "LEARNING", m: "배경 학습 중…", v: "info" };
     case "armed":

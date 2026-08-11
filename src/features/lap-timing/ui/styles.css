@@ -33,10 +33,19 @@ html.native-cam, html.native-cam body, html.native-cam .phone { background: tran
 .banner.warning .eyebrow { color: var(--color-warning-text); }
 
 .timer-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--s2); padding: var(--s3); }
-.timer { font-size: var(--font-hero); font-weight: 700; letter-spacing: -0.02em; line-height: 1.02; }
+/* R13 히어로(1안): Space Grotesk Light + 센티초 축소 + 수직 그라데이션(금속성 깊이) */
+.timer { font-family: var(--font-numeric); font-size: var(--font-hero); font-weight: 300; letter-spacing: -0.02em; line-height: 1; font-feature-settings: "tnum"; }
+.timer .cs { font-size: 0.64em; }
+.timer:not(.frozen) { background: linear-gradient(180deg, #ffffff 30%, #8b93a5 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .timer.frozen { color: var(--color-text-secondary); }
 .chip-wrap { display: flex; align-items: center; gap: var(--s2); min-height: 48px; }
-.chip { width: 48px; height: 48px; border-radius: var(--r-full); border: 2px solid var(--color-text-primary); box-shadow: 0 0 0 3px oklch(0 0 0 / 0.55), var(--shadow); }
+/* R13: 시그니처 스탬프 버튼(탭=재무장) — 버튼 크롬 제거, 스탬프 자체가 UI */
+.stamp-btn { background: none; border: 0; padding: var(--s1); cursor: pointer; line-height: 0; }
+.stamp-cell { opacity: 0; animation: stamp-cell-in 0.4s ease-out forwards; }
+@keyframes stamp-cell-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+/* 수치 공통 서체 — 통계·랩 리스트도 계측 서체로 통일 */
+.tnum { font-family: var(--font-numeric); font-feature-settings: "tnum"; }
+.statrow .v { font-weight: 300; }
 
 .statrow { display: flex; justify-content: space-around; padding: var(--s3) var(--s4); }
 .stat { text-align: center; }

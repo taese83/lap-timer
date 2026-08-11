@@ -1,6 +1,7 @@
 // 기록 화면 — 측정 화면과 동일 디자인 언어(confirmed-design.md 화면2). ← 뒤로 + 초기화 단일.
 import { useLapStore } from "../model/store";
 import { fmt } from "./format";
+import { SignatureStamp } from "./SignatureStamp";
 
 export function ResultScreen() {
   const s = useLapStore();
@@ -52,6 +53,8 @@ export function ResultScreen() {
                   랩 {l.n}
                   {l.suspect && <span className="badge">의심</span>}
                 </span>
+                {/* R13: 이 랩을 끊은 통과의 색 지문 — 의심 랩에서 "내 차였나" 시각 판별 근거 */}
+                {l.sig && l.sig.length > 0 && <SignatureStamp sig={l.sig} cell={4} />}
                 <span className="tnum">{fmt(l.durationMs)}</span>
               </div>
               {l.candidatesMs && l.candidatesMs.length > 1 && (

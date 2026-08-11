@@ -5,6 +5,12 @@ export function fmt(ms: number): string {
   return `${String(s).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
 }
 
+/** R13 히어로용 분해 — 초("12.")와 센티초("47")를 크기 분화해 렌더 */
+export function fmtParts(ms: number): { main: string; cs: string } {
+  const [main, cs] = fmt(ms).split(".");
+  return { main: `${main}.`, cs: cs ?? "00" };
+}
+
 import { ACHRO_BINS } from "@/shared/lib/laptime-engine/protocol";
 
 /** 무채색 bin(어두움→밝음) 대표 스와치 — 검정/짙은 회색/밝은 회색/흰색 차 표시용 */

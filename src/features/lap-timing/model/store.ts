@@ -63,7 +63,7 @@ interface LapState {
    * 의심 기록은 삭제, 확정 없이 버튼으로 정지하면 최초 의심 시각을 랩타임으로 기재(의심 표시)
    * 하고 나머지 의심도 후보로 랩에 실어 시간순 표시한다(R10-c).
    */
-  _pendingSuspects: { tMs: number; d: number }[];
+  _pendingSuspects: { tMs: number; d: number; sig: number[] | null }[];
 
   hydrate: () => Promise<void>;
   startManual: () => void;
@@ -92,7 +92,16 @@ export const useLapStore = create<LapState>((set, get) => {
     if (get()._pendingSuspects.length > 0) set({ _pendingSuspects: [] });
   }
 
-  function recordLap(stopEngineMs: number | null, suspect: boolean, candidatesMs?: number[], enforceMin = true): void {
+  interface RecordOpts {
+    candidatesMs?: number[];
+    /** R11-b: 랩 하한 적용 여부 — 수동(탭) 정지는 false (스톱워치 시맨틱) */
+    enforceMin?: boolean;
+    /** R13: 이 랩을 끊은 통과의 색 시그니처 — 기록 화면 미니 스탬프 */
+    sig?: number[] | null;
+  }
+
+  function recordLap(stopEngineMs: number | null, suspect: boolean, opts: RecordOpts = {}): void {
+    const { candidatesMs, enforceMin = true, sig } = opts;
     clearSuspect();
     const { lapStart, laps, startedAt, otherPass } = get();
     if (!lapStart) return;
@@ -109,6 +118,7 @@ export const useLapStore = create<LapState>((set, get) => {
     // R10-c: 의심 후보가 2개 이상일 때만 랩에 실어 시간순 표시 (1개면 durationMs가 곧 그 값)
     const lap: Lap = { n: laps.length + 1, durationMs: dur, suspect };
     if (candidatesMs !== undefined && candidatesMs.length >= 2) lap.candidatesMs = candidatesMs;
+    if (sig != null && sig.length > 0) lap.sig = sig;
     const nextLaps = [...laps, lap];
     set({
       laps: nextLaps,
@@ -178,7 +188,7 @@ export const useLapStore = create<LapState>((set, get) => {
         // R11-b(사용자 확정): 수동(탭) 시작의 정지는 **즉각 반응 + 클릭 시점 즉시 기록** —
         // 스톱워치 시맨틱, 랩 하한 비적용. 의심 결산·랩 하한 규칙은 감지 모드 전용(R10-d).
         if (startMode !== "detect") {
-          recordLap(null, false, undefined, false);
+          recordLap(null, false, { enforceMin: false });
           return;
         }
         // R10: 보류된 의심이 있으면 최초 의심 시각으로 의심 랩 기재 + 전 의심을 후보로 표시
@@ -190,7 +200,7 @@ export const useLapStore = create<LapState>((set, get) => {
             ? _pendingSuspects.filter((p) => p.tMs - startEngineMs >= MIN_LAP_MS)
             : [];
         if (valid.length > 0) {
-          recordLap(valid[0]!.tMs, true, valid.map((p) => p.tMs - startEngineMs!));
+          recordLap(valid[0]!.tMs, true, { candidatesMs: valid.map((p) => p.tMs - startEngineMs!), sig: valid[0]!.sig });
           if (get().phase === "running") recordLap(null, false);
         } else {
           recordLap(null, false); // 유효 의심 없음 — 클릭 시점 기록 (하한 적용)
@@ -235,12 +245,13 @@ export const useLapStore = create<LapState>((set, get) => {
           return;
         }
         if (d <= match) {
-          recordLap(event.tMs, false); // 확정 매치 — 즉시 정지, 보류 의심은 recordLap이 삭제
+          // 확정 매치 — 즉시 정지, 보류 의심은 recordLap이 삭제. 통과 시그니처를 랩에 보존(R13)
+          recordLap(event.tMs, false, { sig: event.signature });
           return;
         }
         // R10(사용자 확정 흐름): 의심은 시각만 보류하고 타이머는 계속 — _pendingSuspects 주석 참조.
         // R10-c: 여러 의심은 전부 시간순으로 쌓는다 (정지 시 후보로 함께 표시).
-        const pendings = [...get()._pendingSuspects, { tMs: event.tMs, d }];
+        const pendings = [...get()._pendingSuspects, { tMs: event.tMs, d, sig: event.signature }];
         set({
           _pendingSuspects: pendings,
           lastEvent: `의심 통과 d=${d.toFixed(2)} 기록 (${pendings.length}건째) — 계측 계속`,

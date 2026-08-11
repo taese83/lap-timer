@@ -5,7 +5,8 @@ import { useLapStore } from "../model/store";
 import { startCamera, type CameraHandle } from "../model/camera";
 import { startNativeCamera } from "../model/camera-native";
 import { SlideToStart } from "./SlideToStart";
-import { fmt, signatureColor } from "./format";
+import { fmt, fmtParts } from "./format";
+import { SignatureStamp } from "./SignatureStamp";
 import type { LapPhase } from "@/entities/session/model/types";
 import type { EngineStats } from "@/shared/lib/laptime-engine/protocol";
 
@@ -13,7 +14,7 @@ function bannerFor(phase: LapPhase, laps: number): { e: string; m: string; v: "i
   switch (phase) {
     case "idle":
       return laps
-        ? { e: "대기", m: "다음 랩 — 아래로 밀어서 시작", v: "info" }
+        ? { e: "대기", m: "다음 랩 — 아래 시작을 밀어서 인식", v: "info" }
         : { e: "준비", m: "밀어서 시작하면 차 첫 통과를 기다립니다", v: "info" };
     case "learning":
       return { e: "LEARNING", m: "배경 학습 중…", v: "info" };
@@ -103,8 +104,8 @@ export function MeasureScreen() {
   const last = s.laps.at(-1) ?? null;
   const best = s.laps.length ? Math.min(...s.laps.map((l) => l.durationMs)) : null;
   const banner = bannerFor(s.phase, s.laps.length);
-  const chipColor = signatureColor(s.targetSig);
-  const timerText = running ? fmt(s.elapsedMs) : last ? fmt(last.durationMs) : "00.00";
+  const timerMs = running ? s.elapsedMs : last ? last.durationMs : 0;
+  const timerParts = fmtParts(timerMs);
 
   return (
     <>
@@ -153,11 +154,20 @@ export function MeasureScreen() {
         )}
       </div>
       <div className="timer-wrap">
-        <div className="overline">{running ? "현재 랩" : last ? "직전 랩" : "랩타임"}</div>
-        <div className={`timer tnum${running ? "" : " frozen"}`}>{timerText}</div>
+        {/* R13: 계기판 오버라인 — 트래킹 넓은 영문 라벨 */}
+        <div className="overline" style={{ letterSpacing: "0.34em" }}>
+          {running ? "CURRENT LAP" : last ? "LAST LAP" : "LAP TIME"}
+        </div>
+        {/* R13 히어로(1안): 센티초 축소 — 초가 주인공 */}
+        <div className={`timer tnum${running ? "" : " frozen"}`}>
+          {timerParts.main}
+          <span className="cs">{timerParts.cs}</span>
+        </div>
         <div className="chip-wrap">
-          {chipColor ? (
-            <button className="chip" style={{ background: chipColor }} onClick={s.rearm} title="새 타깃" aria-label="새 타깃으로 재무장" />
+          {s.targetSig && s.targetSig.length > 0 ? (
+            <button className="stamp-btn" onClick={s.rearm} title="새 타깃" aria-label="새 타깃으로 재무장">
+              <SignatureStamp sig={s.targetSig} cell={8} animate />
+            </button>
           ) : (
             <span className="caption">&nbsp;</span>
           )}
@@ -170,7 +180,8 @@ export function MeasureScreen() {
         </div>
         <div className="stat">
           <div className="overline">Best</div>
-          <div className="v tnum">{best != null ? fmt(best) : "—"}</div>
+          {/* R13: 목업 확정 — BEST 수치 라임 포인트 */}
+          <div className="v tnum" style={{ color: "var(--lime, #a3e635)" }}>{best != null ? fmt(best) : "—"}</div>
         </div>
         <div className="stat">
           <div className="overline">랩</div>

@@ -84,6 +84,30 @@ describe("lap store 상태머신", () => {
     expect(Math.round(S().laps[0]!.durationMs)).toBe(4000); // 확정 통과 시각 기준
   });
 
+  it("R13: 랩에 통과 시그니처가 보존된다 — 확정 정지는 확정 통과, 의심 정지는 최초 의심의 것", async () => {
+    // 확정 정지
+    S().startDetect();
+    S().cameraReady();
+    await wait(1300);
+    S().handlePass(pass(1000, green));
+    S().handlePass(pass(3000, green));
+    expect(S().laps[0]!.sig).toEqual(green);
+    // 의심 정지 — 최초 의심 통과의 시그니처
+    const border = Array.from({ length: 12 }, (_, i) => (i === 4 ? 0.6 : i === 5 ? 0.4 : 0));
+    S().startDetect();
+    S().cameraReady();
+    await wait(1300);
+    S().handlePass(pass(10000, green));
+    S().handlePass(pass(13000, border));
+    S().stopByButton();
+    expect(S().laps[1]!.suspect).toBe(true);
+    expect(S().laps[1]!.sig).toEqual(border);
+    // 수동 정지 — 시그니처 없음
+    S().startManual();
+    S().stopByButton();
+    expect(S().laps[2]!.sig).toBeUndefined();
+  });
+
   it("R10-c: 여러 의심은 전부 시간순 후보로 랩에 실린다 (채택값 = 최초 의심)", async () => {
     S().startDetect();
     S().cameraReady();

@@ -10,13 +10,11 @@ import { SignatureStamp } from "./SignatureStamp";
 import type { LapPhase } from "@/entities/session/model/types";
 import type { EngineStats } from "@/shared/lib/laptime-engine/protocol";
 
-function bannerFor(phase: LapPhase, laps: number): { e: string; m: string; v: "info" | "warning" } {
+function bannerFor(phase: LapPhase, laps: number): { e: string; m: string; v: "info" | "warning" } | null {
   switch (phase) {
     case "idle":
-      // R15-b(사용자): 랩 보유 대기 상태의 안내 문구 제거 — 자명한 상태라 불필요
-      return laps
-        ? { e: "대기", m: "", v: "info" }
-        : { e: "준비", m: "밀어서 시작하면 차 첫 통과를 기다립니다", v: "info" };
+      // R15-b/e(사용자): 대기 안내 문구 제거, 첫 화면(랩 0)은 배너 영역 자체를 제거
+      return laps ? { e: "대기", m: "", v: "info" } : null;
     case "learning":
       return { e: "LEARNING", m: "배경 학습 중…", v: "info" };
     case "armed":
@@ -123,18 +121,20 @@ export function MeasureScreen() {
           </button>
         )}
       </header>
-      <div className={`banner ${banner.v}`}>
-        <span className="eyebrow">{banner.e}</span>
-        {(banner.m !== "" || (s.phase === "learning" && fps === null && camError === null)) && (
-          <span>{s.phase === "learning" && fps === null && camError === null ? "카메라 켜는 중…" : banner.m}</span>
-        )}
-        {s.lastEvent !== null && (
-          // R4 판정 로그 — 마지막 통과에 대한 결정(출발/정지/타차/디바운스)을 그대로 노출
-          <span className="caption" style={{ display: "block", opacity: 0.85 }}>
-            {s.lastEvent}
-          </span>
-        )}
-      </div>
+      {banner !== null && (
+        <div className={`banner ${banner.v}`}>
+          <span className="eyebrow">{banner.e}</span>
+          {(banner.m !== "" || (s.phase === "learning" && fps === null && camError === null)) && (
+            <span>{s.phase === "learning" && fps === null && camError === null ? "카메라 켜는 중…" : banner.m}</span>
+          )}
+          {s.lastEvent !== null && (
+            // R4 판정 로그 — 마지막 통과에 대한 결정(출발/정지/타차/디바운스)을 그대로 노출
+            <span className="caption" style={{ display: "block", opacity: 0.85 }}>
+              {s.lastEvent}
+            </span>
+          )}
+        </div>
+      )}
       <div className="lens-line">
         {!detectSession ? (
           <>◉ 카메라 — 밀어서 시작하면 켜짐</>

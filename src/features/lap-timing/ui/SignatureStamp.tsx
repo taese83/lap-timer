@@ -1,8 +1,8 @@
 // R13/R15: 색 시그니처 히트맵 스탬프 — 52차원 분포를 라운드 정사각 격자로(셀 1개 = bin 1개).
 // 레이아웃: [hue 24열 × 밝은/어두운 2행] + 우측 [무채색 2×2 블록(상: 밝음, 하: 어두움)].
-// R15 가시성(사용자 확정 — LED 트레이안): 비중을 투명도가 아니라 **명도로 인코딩**해 검은
-// 배경에서도 대비를 유지하고, 활성 셀에 동일 색 림 스트로크, 지배 열에만 글로우, 전체를
-// 배경보다 반 단계 밝은 트레이(헤어라인)에 올린다 — "LED 모듈" 무드.
+// R15 가시성(→ R15-d 사용자 확정: 트레이 없는 개선 1안): 비중을 투명도가 아니라 **명도로
+// 인코딩**해 검은 배경에서도 대비를 유지하고, 활성 셀에 동일 색 림 스트로크, 지배 열에만
+// 글로우. 빈 셀은 꺼진 LED 격자.
 import { ACHRO_BINS } from "@/shared/lib/laptime-engine/protocol";
 
 export interface StampCell {
@@ -94,8 +94,9 @@ export function SignatureStamp({ sig, cell = 8, animate = false }: Props) {
   const x = (col: number) => col * (cell + gap) + (col >= planeBins ? blockGap : 0);
   const gridW = x(planeBins + 1) + cell;
   const gridH = cell * 2 + gap;
-  // R15 트레이 — 측정용은 넉넉히, 미니(리스트)는 얇게
-  const pad = cell >= 6 ? cell * 1.1 : cell * 0.8;
+  // R15-d(사용자): 트레이 제거 — 명도 인코딩·림·글로우만으로 배경 대비 확보(개선 1안).
+  // 패딩은 지배 셀 글로우가 잘리지 않을 만큼만.
+  const pad = cell * 0.5;
   const w = gridW + pad * 2;
   const h = gridH + pad * 2;
   const fid = `stamp-glow-${filterSeq++}`;
@@ -108,7 +109,6 @@ export function SignatureStamp({ sig, cell = 8, animate = false }: Props) {
           </filter>
         </defs>
       )}
-      <rect x="0.5" y="0.5" width={w - 1} height={h - 1} rx={cell * 0.9} fill="hsl(222 18% 13%)" stroke="hsl(222 14% 26%)" strokeWidth="1" />
       <g transform={`translate(${pad},${pad})`}>
         {cells.map((c, i) => (
           <rect

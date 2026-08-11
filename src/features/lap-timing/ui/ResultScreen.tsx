@@ -54,7 +54,7 @@ export function ResultScreen() {
                   {l.suspect && <span className="badge">의심</span>}
                 </span>
                 {/* R13: 이 랩을 끊은 통과의 색 지문 — 의심 랩에서 "내 차였나" 시각 판별 근거 */}
-                {l.sig && l.sig.length > 0 && <SignatureStamp sig={l.sig} cell={4} />}
+                {l.sig && l.sig.length > 0 && <SignatureStamp sig={l.sig} cell={3.2} />}
                 <span className="tnum">{fmt(l.durationMs)}</span>
               </div>
               {l.candidatesMs && l.candidatesMs.length > 1 && (

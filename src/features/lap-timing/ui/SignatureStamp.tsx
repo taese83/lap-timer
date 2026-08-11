@@ -1,27 +1,27 @@
-// R13/R15: 색 시그니처 히트맵 스탬프 — 52차원 분포를 라운드 정사각 격자로(셀 1개 = bin 1개).
-// 레이아웃: [hue 24열 × 밝은/어두운 2행] + 우측 [무채색 2×2 블록(상: 밝음, 하: 어두움)].
-// R15 가시성(→ R15-d 사용자 확정: 트레이 없는 개선 1안): 비중을 투명도가 아니라 **명도로
-// 인코딩**해 검은 배경에서도 대비를 유지하고, 활성 셀에 동일 색 림 스트로크, 지배 열에만
-// 글로우. 빈 셀은 꺼진 LED 격자.
+// R16: 색 시그니처 이퀄라이저 — 52차원 분포를 중앙 미러 스펙트럼 바로(막대 1쌍 = hue bin 1개).
+// 사용자 확정: 검출 강도를 **길이**로 인코딩(가장 강한 지각 채널). 기준선 위 = 밝은 톤,
+// 아래 = 어두운 톤, 우측 2열 = 무채색(밝음↑/어두움↓). 빈 bin은 기준선 틱으로 축 유지,
+// 명도·림 스트로크·지배 열 글로우(R15)는 보조 인코딩으로 유지.
 import { ACHRO_BINS } from "@/shared/lib/laptime-engine/protocol";
 
-export interface StampCell {
+export interface StampBar {
   col: number;
-  row: number;
+  /** 기준선 위(밝은 톤/밝은 무채색) 여부 */
+  up: boolean;
+  /** 정규화 강도 0~1 (빈 bin = 0) */
+  t: number;
   color: string;
   stroke: string;
   alpha: number;
-  /** 지배 열(최대 비중 hue) 활성 셀 — 글로우 대상 */
   glow: boolean;
 }
 
-/** 시그니처 → 셀 목록 (순수 — 테스트 대상). 무채색 블록은 col = planeBins, planeBins+1. */
-export function stampCells(sig: number[]): { cells: StampCell[]; planeBins: number; domHue: number | null } {
+/** 시그니처 → 막대 목록 (순수 — 테스트 대상). 무채색은 col = planeBins, planeBins+1. */
+export function stampBars(sig: number[]): { bars: StampBar[]; planeBins: number; domHue: number | null } {
   const planeBins = Math.max(1, Math.floor((sig.length - ACHRO_BINS) / 2));
   let maxM = 0.001;
   for (let i = 0; i < sig.length; i++) maxM = Math.max(maxM, sig[i] ?? 0);
-  const t = (m: number): number => Math.pow(Math.max(0, m) / maxM, 0.55);
-  // 지배 hue 열 (유채색 질량 기준) — 유채색이 전무하면 글로우 없음
+  const t = (m: number): number => (m > 0 ? Math.pow(m / maxM, 0.55) : 0);
   let dom = -1;
   let domMass = 0;
   for (let i = 0; i < planeBins; i++) {
@@ -33,22 +33,21 @@ export function stampCells(sig: number[]): { cells: StampCell[]; planeBins: numb
   }
   const domHue = dom >= 0 && domMass > 0 ? Math.round(((dom + 0.5) / planeBins) * 360) : null;
 
-  const cells: StampCell[] = [];
-  const push = (col: number, row: number, m: number, hueDeg: number | null, plane: "b" | "d" | "a", tone?: number): void => {
+  const bars: StampBar[] = [];
+  const push = (col: number, up: boolean, m: number, hueDeg: number | null, tone?: number): void => {
+    const tv = t(m);
     if (m <= 0) {
-      // 꺼진 LED — 격자 존재감은 유지하되 조용하게
-      cells.push({ col, row, color: "hsl(222 14% 40%)", stroke: "none", alpha: 0.16, glow: false });
+      bars.push({ col, up, t: 0, color: "hsl(222 14% 42%)", stroke: "none", alpha: 0.35, glow: false });
       return;
     }
-    const tv = t(m);
-    const alpha = 0.45 + 0.55 * tv;
+    const alpha = 0.55 + 0.45 * tv;
     let color: string;
     let stroke: string;
-    if (plane === "b") {
+    if (hueDeg !== null && up) {
       const L = Math.round(52 + 20 * tv);
       color = `hsl(${hueDeg} 90% ${L}%)`;
       stroke = `hsl(${hueDeg} 95% ${Math.min(96, L + 16)}%)`;
-    } else if (plane === "d") {
+    } else if (hueDeg !== null) {
       const L = Math.round(30 + 20 * tv);
       color = `hsl(${hueDeg} 88% ${L}%)`;
       stroke = `hsl(${hueDeg} 92% ${Math.min(96, L + 14)}%)`;
@@ -56,78 +55,94 @@ export function stampCells(sig: number[]): { cells: StampCell[]; planeBins: numb
       color = `hsl(0 0% ${tone}%)`;
       stroke = `hsl(0 0% ${Math.min(100, (tone ?? 50) + 18)}%)`;
     }
-    cells.push({ col, row, color, stroke, alpha, glow: plane !== "a" && col === dom });
+    bars.push({ col, up, t: tv, color, stroke, alpha, glow: hueDeg !== null && col === dom });
   };
 
   for (let i = 0; i < planeBins; i++) {
     const h = Math.round(((i + 0.5) / planeBins) * 360);
-    push(i, 0, sig[planeBins + i] ?? 0, h, "b");
-    push(i, 1, sig[i] ?? 0, h, "d");
+    push(i, true, sig[planeBins + i] ?? 0, h);
+    push(i, false, sig[i] ?? 0, h);
   }
-  // 무채색 2×2: [최명, 명 / 암, 최암] — achro bin 순서는 [최암, 암, 명, 최명](엔진 delta 부호 기준)
+  // 무채색: [최암, 암, 명, 최명] bin → 1열(최명↑/최암↓), 2열(명↑/암↓)
   const tone = [22, 45, 68, 88];
-  const layout: [number, number, number][] = [
-    [planeBins, 0, 3],
-    [planeBins + 1, 0, 2],
-    [planeBins, 1, 1],
-    [planeBins + 1, 1, 0],
-  ];
-  for (const [col, row, k] of layout) push(col, row, sig[planeBins * 2 + k] ?? 0, null, "a", tone[k]);
-  return { cells, planeBins, domHue };
+  push(planeBins, true, sig[planeBins * 2 + 3] ?? 0, null, tone[3]);
+  push(planeBins, false, sig[planeBins * 2 + 0] ?? 0, null, tone[0]);
+  push(planeBins + 1, true, sig[planeBins * 2 + 2] ?? 0, null, tone[2]);
+  push(planeBins + 1, false, sig[planeBins * 2 + 1] ?? 0, null, tone[1]);
+  return { bars, planeBins, domHue };
 }
 
 interface Props {
   sig: number[];
-  /** 셀 한 변(px) — 측정 화면 8, 기록 리스트 4 */
+  /** 막대 폭(px) — 측정 화면 8, 기록 리스트 3.2 */
   cell?: number;
-  /** 등록 순간 스캔 애니메이션 (측정 화면 전용) */
+  /** 등록 순간 기준선에서 자라나는 애니메이션 (측정 화면 전용) */
   animate?: boolean;
 }
 
 let filterSeq = 0;
 
 export function SignatureStamp({ sig, cell = 8, animate = false }: Props) {
-  const { cells, planeBins, domHue } = stampCells(sig);
-  const gap = cell * 0.25;
+  const { bars, planeBins, domHue } = stampBars(sig);
+  const bw = cell;
+  const gap = cell * 0.28;
   const rx = cell * 0.3;
-  const blockGap = gap * 3; // hue 격자와 무채색 블록 사이
-  const x = (col: number) => col * (cell + gap) + (col >= planeBins ? blockGap : 0);
-  const gridW = x(planeBins + 1) + cell;
-  const gridH = cell * 2 + gap;
-  // R15-d(사용자): 트레이 제거 — 명도 인코딩·림·글로우만으로 배경 대비 확보(개선 1안).
-  // 패딩은 지배 셀 글로우가 잘리지 않을 만큼만.
+  const maxLen = cell * 2.75;
+  const minLen = cell * 0.5;
+  const blockGap = gap * 3;
+  const x = (col: number) => col * (bw + gap) + (col >= planeBins ? blockGap : 0);
+  const gridW = x(planeBins + 1) + bw;
+  const cy = maxLen + minLen + bw * 0.4;
   const pad = cell * 0.5;
   const w = gridW + pad * 2;
-  const h = gridH + pad * 2;
+  const h = cy * 2;
   const fid = `stamp-glow-${filterSeq++}`;
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label="타깃 색 시그니처" >
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label="타깃 색 시그니처">
       {domHue !== null && (
         <defs>
           <filter id={fid} x="-80%" y="-80%" width="260%" height="260%">
-            <feDropShadow dx="0" dy="0" stdDeviation={cell * 0.28} floodColor={`hsl(${domHue} 90% 60%)`} floodOpacity="0.75" />
+            <feDropShadow dx="0" dy="0" stdDeviation={cell * 0.25} floodColor={`hsl(${domHue} 90% 60%)`} floodOpacity="0.7" />
           </filter>
         </defs>
       )}
-      <g transform={`translate(${pad},${pad})`}>
-        {cells.map((c, i) => (
-          <rect
-            key={i}
-            x={x(c.col)}
-            y={c.row * (cell + gap)}
-            width={cell}
-            height={cell}
-            rx={rx}
-            fill={c.color}
-            fillOpacity={c.alpha}
-            stroke={c.stroke === "none" ? undefined : c.stroke}
-            strokeOpacity={c.stroke === "none" ? undefined : 0.5 * c.alpha}
-            strokeWidth={c.stroke === "none" ? undefined : Math.max(0.4, cell * 0.075)}
-            filter={c.glow && domHue !== null ? `url(#${fid})` : undefined}
-            className={animate ? "stamp-cell" : undefined}
-            style={animate ? { animationDelay: `${c.col * 14}ms` } : undefined}
-          />
-        ))}
+      <g transform={`translate(${pad},0)`}>
+        {bars.map((b, i) => {
+          if (b.t <= 0) {
+            const tickH = Math.max(1.2, cell * 0.22);
+            return (
+              <rect
+                key={i}
+                x={x(b.col)}
+                y={b.up ? cy - 0.4 - tickH : cy + 0.4}
+                width={bw}
+                height={tickH}
+                rx={tickH / 2}
+                fill={b.color}
+                fillOpacity={b.alpha}
+              />
+            );
+          }
+          const len = minLen + b.t * maxLen;
+          return (
+            <rect
+              key={i}
+              x={x(b.col)}
+              y={b.up ? cy - 0.6 - len : cy + 0.6}
+              width={bw}
+              height={len}
+              rx={rx}
+              fill={b.color}
+              fillOpacity={b.alpha}
+              stroke={b.stroke}
+              strokeOpacity={0.5 * b.alpha}
+              strokeWidth={Math.max(0.4, cell * 0.07)}
+              filter={b.glow && domHue !== null ? `url(#${fid})` : undefined}
+              className={animate ? (b.up ? "eq-bar eq-up" : "eq-bar eq-down") : undefined}
+              style={animate ? { animationDelay: `${b.col * 14}ms` } : undefined}
+            />
+          );
+        })}
       </g>
     </svg>
   );

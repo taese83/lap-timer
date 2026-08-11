@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stampCells } from "./SignatureStamp";
+import { stampBars } from "./SignatureStamp";
 import { ACHRO_BINS } from "@/shared/lib/laptime-engine/protocol";
 
 const HUE = 24;
@@ -10,33 +10,35 @@ function sig(fill: (s: number[]) => void): number[] {
   return s;
 }
 
-describe("SignatureStamp 모델", () => {
-  it("지배색 셀이 최대 발광(명도 인코딩) + 글로우, 빈 셀은 꺼진 LED 격자", () => {
+describe("SignatureStamp 이퀄라이저 모델 (R16)", () => {
+  it("지배색 막대가 최대 길이(t=1) + 글로우, 평면은 위/아래로 갈린다", () => {
     const blue = sig((s) => {
-      s[14] = 0.4; // 어두운 남색 (col 14, row 1)
-      s[HUE + 14] = 0.2; // 밝은 하늘색 (col 14, row 0)
+      s[14] = 0.4; // 어두운 남색 → 아래 방향 막대
+      s[HUE + 14] = 0.2; // 밝은 하늘색 → 위 방향 막대
     });
-    const { cells, planeBins, domHue } = stampCells(blue);
+    const { bars, planeBins, domHue } = stampBars(blue);
     expect(planeBins).toBe(24);
-    const dom = cells.find((c) => c.col === 14 && c.row === 1)!;
-    expect(dom.alpha).toBe(1); // 최대 비중 = 정규화 1
-    expect(dom.color).toContain("50%"); // R15: 비중 → 명도 인코딩 (어두운 평면 30+20·t)
-    expect(dom.glow).toBe(true); // 지배 열 글로우
-    expect(dom.stroke).not.toBe("none"); // 림 스트로크
+    expect(bars).toHaveLength(HUE * 2 + ACHRO_BINS);
+    const down = bars.find((b) => b.col === 14 && !b.up)!;
+    expect(down.t).toBe(1); // 최대 비중 = 길이 정규화 1
+    expect(down.glow).toBe(true);
+    expect(down.color).toContain("50%"); // 어두운 평면 명도 보조 인코딩(30+20t)
+    const up = bars.find((b) => b.col === 14 && b.up)!;
+    expect(up.t).toBeGreaterThan(0);
+    expect(up.t).toBeLessThan(1);
     expect(domHue).not.toBeNull();
-    const empty = cells.find((c) => c.col === 0 && c.row === 0)!;
-    expect(empty.alpha).toBeCloseTo(0.16, 2); // 꺼진 LED 격자
+    const empty = bars.find((b) => b.col === 0 && b.up)!;
+    expect(empty.t).toBe(0); // 빈 bin = 기준선 틱
     expect(empty.glow).toBe(false);
-    expect(cells).toHaveLength(HUE * 2 + ACHRO_BINS);
   });
 
-  it("무채색 질량은 2×2 블록 셀에 실린다 (최명 = 우상단 아님 — 좌상단)", () => {
+  it("무채색 질량은 우측 열 막대에 실린다 (최명 = planeBins열 위 방향)", () => {
     const white = sig((s) => {
       s[HUE * 2 + 3] = 0.3; // 최명 무채색
     });
-    const { cells, planeBins } = stampCells(white);
-    const bright = cells.find((c) => c.col === planeBins && c.row === 0)!; // 레이아웃상 최명 위치
-    expect(bright.alpha).toBe(1);
+    const { bars, planeBins } = stampBars(white);
+    const bright = bars.find((b) => b.col === planeBins && b.up)!;
+    expect(bright.t).toBe(1);
     expect(bright.color).toContain("88%");
   });
 });

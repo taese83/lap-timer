@@ -36,7 +36,7 @@
   --font-numeric: "Space Grotesk", "Pretendard Variable", -apple-system, sans-serif;
   --font-base: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
-  --font-hero: clamp(3.5rem, 17vw, 6.5rem);
+  --font-hero: clamp(3rem, 14vw, 5.5rem); /* R16: 측정 히어로 소폭 축소(사용자) */
   --font-display: 2rem;
   --font-h2: 1.5rem;
   --font-h3: 1.25rem;

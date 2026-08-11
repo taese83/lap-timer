@@ -228,3 +228,11 @@ cap sync가 덮어써 불가(기록).
 
 수동(탭) 시작의 정지는 스톱워치 시맨틱 — **하한 없이 클릭 시점 즉시 기록**(800ms 미만도 랩).
 랩 하한(800ms)·의심 결산·"하한 미만 기록 없이 종료"(R11)는 전부 감지(밀어서 인식) 모드 전용.
+
+### R12 (2026-08-11) — 기록 화면 초기화 버튼 하단 고정
+
+.bottom-cta.pinned = position:sticky bottom:0 (기록 화면 전용) — 랩 리스트가 길어 스크롤돼도
+초기화 상시 노출. 함정 2개 기록: ① R7의 `.phone > *:not()` position:relative가 특이도로 이김
+→ `.phone > .bottom-cta.pinned` 동급+후행으로 해결 ② `.phone`의 overflow:hidden이 sticky를
+무력화 → 제거(cam-bg는 absolute inset-0라 클리핑 불필요). 브라우저 실측: 랩 15개 스크롤
+상/중/하 전부 뷰포트 하단 고정 + 최하단 클릭 타깃 = 초기화 버튼.

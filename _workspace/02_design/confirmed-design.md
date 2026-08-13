@@ -285,3 +285,11 @@ lens-line(◉ 카메라·fps·피크 미터)을 헤더 아래 → **배너 아�
 측정 화면 배너에서 설명 문구(banner.m)·판정 로그(lastEvent, 랩 시간 포함)·"카메라 켜는 중…"
 보조 문구를 모두 제거 — eyebrow(상태 칩)만 표시. lastEvent 스토어 필드는 유지(향후/DEV)하되
 UI 노출만 제거. 카메라 진단(fps·피크)은 별도 lens-line에 그대로.
+
+## R18 (2026-08-14) — 앱 아이콘 (motor lab 동일 스타일)
+
+다크 라운드 스퀘어(#0A0A0B, rx 7/32) + 라임(#D8F542) 플랫 글리프 — motor lab과 동일 언어.
+글리프는 스톱워치(본체 링 + 크라운 + 좌우 버튼 + 1~2시 방향 바늘 + 허브). 소스는
+public/favicon.svg. 래스터: 브라우저 canvas 원해상도 렌더 → icon-192/512·apple-touch(180).
+iOS AppIcon 1024는 icon-512를 sips 업스케일(iOS 자동 마스킹으로 라운드 모서리 문제없음).
+manifest.webmanifest(favicon.svg + 192 + 512, maskable은 iOS 앱이라 생략) + index.html 배선.

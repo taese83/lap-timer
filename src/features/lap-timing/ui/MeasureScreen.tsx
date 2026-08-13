@@ -122,17 +122,9 @@ export function MeasureScreen() {
         )}
       </header>
       {banner !== null && (
+        // R17(사용자): 이 영역은 오로지 상태(eyebrow)만 — 설명 문구·판정 로그(랩 시간) 제거
         <div className={`banner ${banner.v}`}>
           <span className="eyebrow">{banner.e}</span>
-          {(banner.m !== "" || (s.phase === "learning" && fps === null && camError === null)) && (
-            <span>{s.phase === "learning" && fps === null && camError === null ? "카메라 켜는 중…" : banner.m}</span>
-          )}
-          {s.lastEvent !== null && (
-            // R4 판정 로그 — 마지막 통과에 대한 결정(출발/정지/타차/디바운스)을 그대로 노출
-            <span className="caption" style={{ display: "block", opacity: 0.85 }}>
-              {s.lastEvent}
-            </span>
-          )}
         </div>
       )}
       <div className="lens-line">

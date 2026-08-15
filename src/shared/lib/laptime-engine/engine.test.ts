@@ -314,6 +314,67 @@ describe("laptime-engine", () => {
     expect(ev[0]!.tMs).toBeLessThan(48);
   });
 
+  /** R19 그림자 fixture: 배경(회색 100) 대비 frac 비율의 픽셀을 균일 감광(밝기 비율 k, 색 보존) */
+  const shade = (tMs: number, k: number, frac = 1): EngineFrame => {
+    const luma = new Uint8Array(N).fill(100);
+    const rgb = new Uint8Array(N * 3).fill(100);
+    const v = Math.round(100 * k);
+    for (let i = 0; i < Math.round(N * frac); i++) {
+      luma[i] = v;
+      rgb[i * 3] = v;
+      rgb[i * 3 + 1] = v;
+      rgb[i * 3 + 2] = v;
+    }
+    return { tMs, luma, rgb };
+  };
+
+  it("R19 그림자: 균일 감광(밝기 비율 0.55, 색 보존) 진입·이탈은 통과가 아니다 — 오탐 0", () => {
+    const e = mk();
+    const ev: ReturnType<typeof e.process> = [];
+    e.process(frame(0, 0)); // 배경 시드 (회색 100)
+    ev.push(...e.process(shade(16, 0.55))); // 그림자 전면 진입 (Δluma 45 > 임계 40이지만 그림자)
+    expect(e.lastChangeRatio).toBe(0); // 전 픽셀 그림자 분류 — burst 자체가 안 열림
+    ev.push(...e.process(shade(32, 0.55)));
+    ev.push(...e.process(frame(48, 0))); // 이탈
+    expect(ev).toHaveLength(0);
+  });
+
+  it("R19 그림자 체류 후 이탈: 배경 학습 동결로 이탈 순간에도 오탐 0", () => {
+    const e = mk();
+    const ev: ReturnType<typeof e.process> = [];
+    e.process(frame(0, 0));
+    // 1초 체류 — 학습이 동결되지 않으면 배경이 55로 끌려가 이탈 시 밝아짐이 통과로 오탐된다
+    for (let t = 16; t <= 1000; t += 16) ev.push(...e.process(shade(t, 0.55)));
+    ev.push(...e.process(frame(1016, 0))); // 이탈 — 동결된 원래 배경과 일치해야 함
+    expect(e.lastChangeRatio).toBe(0);
+    ev.push(...e.process(frame(1032, 0)));
+    expect(ev).toHaveLength(0);
+  });
+
+  it("R19: 그림자 대역 밝기여도 색이 있는 차는 감지된다 (색 잔차 = 실물)", () => {
+    const e = mk();
+    e.process(frame(0, 0)); // 배경 회색 100
+    // 어두운 빨강 (150,20,20): luma ≈59 → k≈0.59 그림자 대역이지만 대립채널 잔차 130 ≫ 24
+    const luma = new Uint8Array(N).fill(59);
+    const rgb = new Uint8Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      rgb[i * 3] = 150;
+      rgb[i * 3 + 1] = 20;
+      rgb[i * 3 + 2] = 20;
+    }
+    const ev = [...e.process({ tMs: 16, luma, rgb }), ...e.process(frame(32, 0))];
+    expect(ev).toHaveLength(1);
+    expect(ev[0]!.peakChangeRatio).toBeCloseTo(1, 5);
+  });
+
+  it("R19: 검정 차(그림자 대역보다 어두움)는 그림자로 오분류되지 않는다", () => {
+    const e = mk();
+    e.process(frame(0, 0)); // 배경 회색 100
+    // luma 20 → k=0.2 < shadowRatioMin(0.4) — 무채색이어도 실물 가림으로 인정
+    const ev = [...e.process(shade(16, 0.2)), ...e.process(frame(32, 0))];
+    expect(ev).toHaveLength(1);
+  });
+
   it("reset 후 배경 재시드 — 이전 상태 이월 없음", () => {
     const e = mk();
     e.process(frame(0, 0));

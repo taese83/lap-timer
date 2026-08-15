@@ -41,9 +41,16 @@ export interface LaptimeEngine {
   readonly options: EngineOptions;
 }
 
+/** R19 픽셀 분류 값 — changeRatio가 프레임마다 채우고 시그니처·배경 학습이 재사용 */
+const CLS_BG = 0;
+const CLS_FOREGROUND = 1;
+const CLS_SHADOW = 2;
+
 export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): LaptimeEngine {
   const options: EngineOptions = { ...DEFAULT_ENGINE_OPTIONS, ...partial };
   const n = options.width * options.height;
+  // R19: 프레임당 픽셀 분류 버퍼 — 같은 process() 호출 안에서만 유효(changeRatio가 먼저 채움)
+  const cls = new Uint8Array(n);
   let bg: Float32Array | null = null;
   // R9 색 배경 모델 — 대립채널(r−g, g−b) EMA. 순수 노출 변화에 불변이라 luma보다 안정적.
   let bgO1: Float32Array | null = null;
@@ -118,10 +125,37 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
     accumulateSignature(frame, b);
   }
 
+  /**
+   * R19 그림자 픽셀 판정 — 전경 판정을 통과한 픽셀에만 적용. 그림자는 조도만 낮추므로 밝기가
+   * 비율 k(그림자 대역 내)로 줄고, R·G·B가 같은 k로 스케일돼 대립채널도 k배로 보존된다
+   * (Prati/Cucchiara "Detecting Moving Shadows", MOG2 방식). 실물 가림은 색 자체가 바뀌거나
+   * (k-스케일 잔차 큼) 대역 밖으로 어두워진다(검정 차). rgb 없는 프레임은 색 보존을 검증할
+   * 수 없어 그림자로 분류하지 않는다(luma 전용 하위 호환 — 필터 미적용이 안전측).
+   */
+  function isShadowPixel(frame: EngineFrame, i: number): boolean {
+    const rgb = frame.rgb;
+    if (!chromaReady || !rgb) return false;
+    const bgL = bg![i]!;
+    if (bgL < 16) return false; // 배경이 거의 검정이면 비율 k가 불안정 — 판정 보류(전경 유지)
+    const k = frame.luma[i]! / bgL;
+    if (k < options.shadowRatioMin || k > options.shadowRatioMax) return false;
+    const dOpp =
+      Math.abs(rgb[i * 3]! - rgb[i * 3 + 1]! - k * bgO1![i]!) +
+      Math.abs(rgb[i * 3 + 1]! - rgb[i * 3 + 2]! - k * bgO2![i]!);
+    return dOpp < options.shadowChromaTolerance;
+  }
+
   function changeRatio(frame: EngineFrame): number {
     let changed = 0;
     for (let i = 0; i < n; i++) {
-      if (isForeground(frame, i)) changed++;
+      if (!isForeground(frame, i)) {
+        cls[i] = CLS_BG;
+      } else if (isShadowPixel(frame, i)) {
+        cls[i] = CLS_SHADOW; // R19: 그림자는 변화율에서 제외 — burst를 열지 못한다
+      } else {
+        cls[i] = CLS_FOREGROUND;
+        changed++;
+      }
     }
     return changed / n;
   }
@@ -134,8 +168,9 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
     const strongDelta = 2 * options.pixelDeltaThreshold;
     for (let i = 0; i < n; i++) {
       const delta = luma[i]! - bg![i]!;
-      // 전경(변한) 픽셀만 색 시그니처에 반영 — 배경 색 오염 배제 (R9: luma OR chroma 판정 공유)
-      if (!isForeground(frame, i)) continue;
+      // 실물 전경 픽셀만 색 시그니처에 반영 — 배경 색·그림자 오염 배제 (R19: changeRatio가
+      // 같은 process() 호출에서 채운 분류를 재사용)
+      if (cls[i] !== CLS_FOREGROUND) continue;
       const r = rgb[i * 3]! / 255;
       const g = rgb[i * 3 + 1]! / 255;
       const b = rgb[i * 3 + 2]! / 255;
@@ -254,6 +289,10 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
       const a = options.bgLearnRate;
       const rgb = frame.rgb;
       for (let i = 0; i < n; i++) {
+        // R19: 그림자 픽셀은 배경 학습 동결 — 그림자를 배경으로 흡수하면 그림자가 "이탈"할 때
+        // 밝아짐(k>1, 대역 밖)이 실물 전경으로 잡혀 오탐이 난다. 동결하면 이탈 시 원래 배경과
+        // 일치해 변화율 0으로 조용히 끝난다.
+        if (cls[i] === CLS_SHADOW) continue;
         bg![i] = bg![i]! + a * (luma[i]! - bg![i]!);
         if (chromaReady && rgb) {
           bgO1![i] = bgO1![i]! + a * (rgb[i * 3]! - rgb[i * 3 + 1]! - bgO1![i]!);

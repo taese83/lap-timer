@@ -27,6 +27,20 @@ export interface EngineOptions {
    * 반응하지 않는다. rgb 미제공 프레임은 luma 경로만 사용(하위 호환).
    */
   chromaDeltaThreshold: number;
+  /**
+   * R19 그림자 대역 하한 — 밝기 비율 k(현재 luma / 배경 luma)가 이 미만이면 그림자라기엔
+   * 너무 어두운 것(검정 차 등 실물 가림)으로 보고 그림자로 분류하지 않는다.
+   * 그림자는 조도만 낮추므로 통상 배경의 40~90% 밝기를 유지한다(Prati/Cucchiara, MOG2 Tau).
+   */
+  shadowRatioMin: number;
+  /** R19 그림자 대역 상한 — k가 이 이상이면 유의미한 감광이 아니다(그림자 아님). */
+  shadowRatioMax: number;
+  /**
+   * R19 그림자 색 보존 허용치 — 그림자는 R·G·B를 같은 비율 k로 줄이므로 대립채널도 k배로
+   * 스케일된다. |현재(r−g) − k·배경(r−g)| + |현재(g−b) − k·배경(g−b)| 가 이 미만이면
+   * 색 보존(그림자), 이상이면 색이 실제로 바뀐 것(실물)이다. ?shadowChroma= 오버라이드.
+   */
+  shadowChromaTolerance: number;
   /** 배경 EMA 학습률(비-가림 프레임에서만 적용). */
   bgLearnRate: number;
   /** 통과 이벤트 최소 간격(ms) — 이중 트리거 디바운스(brief minGap). */
@@ -65,6 +79,13 @@ export const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
   // R9: 두 항 합산 지표라 luma 임계보다 넉넉히 — 센서 노이즈(항당 ±수 단위)·경미한 AWB 이동은
   // 밑돌고, 색이 실제로 다른 전경(하늘색 vs 회색 ≈ 200+)은 크게 상회한다. ?chromaDelta= 오버라이드.
   chromaDeltaThreshold: 48,
+  // R19: 그림자 오탐(실기기 2026-08-15 — 그림자 통과가 타이머를 시작) 대응. 대역 [0.4, 0.93]은
+  // MOG2 Tau=0.5 계열의 보수적 확장 — 옅은 그림자(0.9대)까지 걸러낸다. 알려진 트레이드오프:
+  // 중간 회색 차가 회색 트랙 위를 지나면 광학적으로 그림자와 동일해 걸러질 수 있다(현장에서
+  // ?shadowMin=&shadowMax=&shadowChroma= 로 조정). rgb 미제공 프레임은 필터 미적용.
+  shadowRatioMin: 0.4,
+  shadowRatioMax: 0.93,
+  shadowChromaTolerance: 24,
   bgLearnRate: 0.05,
   minGapMs: 300,
   maxBurstMs: 2000,

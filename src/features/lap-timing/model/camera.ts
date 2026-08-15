@@ -17,6 +17,7 @@ export interface CameraHandle {
 /**
  * R2 현장 튜닝 오버라이드(tamiya R53 방식) — 배포 없이 URL 쿼리로 엔진 임계를 조정한다.
  * 예: ?occlusion=0.4&vibration=0.15&delta=40&minGap=500&maxBurst=3000
+ *     ?shadowMin=0.4&shadowMax=0.93&shadowChroma=24 (R19 그림자 필터 대역·색 보존 허용치)
  * 제품 기본 동작은 쿼리 없는 URL에서 불변. 진단 미터가 threshold를 함께 표시한다.
  */
 export function tuningFromQuery(): Partial<EngineOptions> {
@@ -40,6 +41,12 @@ export function tuningFromQuery(): Partial<EngineOptions> {
   if (delta !== null) overrides.pixelDeltaThreshold = delta;
   const chromaDelta = num("chromaDelta");
   if (chromaDelta !== null) overrides.chromaDeltaThreshold = chromaDelta;
+  const shadowMin = num("shadowMin");
+  if (shadowMin !== null) overrides.shadowRatioMin = shadowMin;
+  const shadowMax = num("shadowMax");
+  if (shadowMax !== null) overrides.shadowRatioMax = shadowMax;
+  const shadowChroma = num("shadowChroma");
+  if (shadowChroma !== null) overrides.shadowChromaTolerance = shadowChroma;
   const minGap = num("minGap");
   if (minGap !== null) overrides.minGapMs = minGap;
   const maxBurst = num("maxBurst");

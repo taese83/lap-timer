@@ -51,6 +51,13 @@ export interface EngineOptions {
    * 수십 ms, 손 테스트도 1초 미만이므로 2초는 안전 여유가 크다.
    */
   maxBurstMs: number;
+  /**
+   * R20 통과 인정 지속시간 상한(ms) — burst가 이보다 길면 통과로 인정하지 않는다.
+   * 근접(15cm 내) 통과는 각속도가 높아 수십 ms에 끝나지만, 원거리 사물(걸어가는 사람 등)은
+   * 수백 ms~수 초 화면에 머문다. maxBurstMs(장면 전환 판정·배경 재시드)와 별개의 게이트 —
+   * 이 상한 초과~maxBurstMs 미만 구간의 느린 가림을 조용히 기각한다. ?maxPass= 오버라이드.
+   */
+  maxPassDurationMs: number;
   /** 색 시그니처 hue 히스토그램 bin 수(1-vs-rest 매칭용). */
   hueBins: number;
 }
@@ -89,6 +96,9 @@ export const DEFAULT_ENGINE_OPTIONS: EngineOptions = {
   bgLearnRate: 0.05,
   minGapMs: 300,
   maxBurstMs: 2000,
+  // R20: 손 테스트가 1초 미만(confirmed-design 배치 계약·maxBurstMs 주석 근거)이므로 1000ms가
+  // 기존 사용을 보존하는 가장 보수적인 상한 — 실속 통과(수십 ms)와는 여유가 크다.
+  maxPassDurationMs: 1000,
   hueBins: 24,
 };
 

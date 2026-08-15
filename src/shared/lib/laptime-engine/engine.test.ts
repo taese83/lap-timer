@@ -375,6 +375,29 @@ describe("laptime-engine", () => {
     expect(ev).toHaveLength(1);
   });
 
+  it("R20 지속시간 게이트: 1초 넘는 느린 가림(원거리 사물)은 통과가 아니다 — 이후 감지 정상", () => {
+    const e = mk();
+    const ev: ReturnType<typeof e.process> = [];
+    e.process(frame(0, 0)); // 배경 시드
+    // 원거리 사물이 1.2초 동안 화면을 가림 (maxBurstMs 2s 미만 — 재시드 아님, 게이트 담당 구간)
+    for (let t = 16; t <= 1216; t += 100) ev.push(...e.process(frame(t, 1)));
+    ev.push(...e.process(frame(1300, 0))); // 종결 — duration 1200ms > maxPassDurationMs(1000)
+    expect(ev).toHaveLength(0);
+    // 기각이 디바운스를 오염시키지 않음 — 직후 정상 통과는 감지된다
+    ev.push(...e.process(frame(1400, 1)));
+    ev.push(...e.process(frame(1416, 0)));
+    expect(ev).toHaveLength(1);
+  });
+
+  it("R20: 1초 이하 burst는 기존대로 통과 인정 (손 테스트·저속 통과 보존)", () => {
+    const e = mk();
+    const ev: ReturnType<typeof e.process> = [];
+    e.process(frame(0, 0));
+    for (let t = 16; t <= 816; t += 100) ev.push(...e.process(frame(t, 1))); // duration 800ms
+    ev.push(...e.process(frame(900, 0)));
+    expect(ev).toHaveLength(1);
+  });
+
   it("reset 후 배경 재시드 — 이전 상태 이월 없음", () => {
     const e = mk();
     e.process(frame(0, 0));

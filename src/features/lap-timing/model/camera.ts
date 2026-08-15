@@ -51,6 +51,8 @@ export function tuningFromQuery(): Partial<EngineOptions> {
   if (minGap !== null) overrides.minGapMs = minGap;
   const maxBurst = num("maxBurst");
   if (maxBurst !== null) overrides.maxBurstMs = maxBurst;
+  const maxPass = num("maxPass");
+  if (maxPass !== null) overrides.maxPassDurationMs = maxPass;
   return overrides;
 }
 

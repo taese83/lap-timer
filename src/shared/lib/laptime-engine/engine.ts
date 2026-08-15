@@ -272,9 +272,12 @@ export function createLaptimeEngine(partial: Partial<EngineOptions> = {}): Lapti
         burst = null;
         softSuppressed = true;
       } else {
-        const accepted = !softOnly || burst.softFrames >= SOFT_MIN_FRAMES;
         const centerMs = burst.sumW > 0 ? burst.sumT / burst.sumW : burst.startMs;
         const durationMs = burst.lastMs - burst.startMs;
+        // R20: 통과라기엔 너무 긴 가림(원거리 사물이 느리게 지나감)은 기각 — maxBurstMs(2s,
+        // 장면 전환→재시드)에 못 미치는 중간 길이 구간을 이 게이트가 담당한다.
+        const accepted =
+          (!softOnly || burst.softFrames >= SOFT_MIN_FRAMES) && durationMs <= options.maxPassDurationMs;
         if (accepted && centerMs - lastPassMs >= options.minGapMs) {
           lastPassMs = centerMs;
           events.push({ tMs: centerMs, peakChangeRatio: burst.peak, durationMs, signature: finalizeSignature(burst) });
